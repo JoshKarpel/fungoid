@@ -1,0 +1,6 @@
+[package]
+name = "befunge-rs"
+version = "0.1.0"
+authors = ["Josh Karpel"]
+
+[dependencies]

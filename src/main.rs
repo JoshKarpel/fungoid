@@ -10,6 +10,7 @@ use rand::Rng;
 
 fn main() {
     let program = Program::from_str("0956+++.@");
+//    let program = Program::from_str(&vec![r#"5>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
 //    let program = Program::from_str(r#"64+"!dlroW ,olleH">:#,_@"#);
 
     println!("PROGRAM");
@@ -113,9 +114,11 @@ impl Stack {
 fn run(program: Program) {
     let mut pointer = InstructionPointer::new();
     let mut stack = Stack::new();
+
     let mut rng = rand::thread_rng();
 
     loop {
+        // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
         match program.get(&pointer.position) {
             '^' => pointer.direction = Direction::Up,
@@ -123,6 +126,22 @@ fn run(program: Program) {
             '>' => pointer.direction = Direction::Right,
             '<' => pointer.direction = Direction::Left,
             '?' => pointer.direction = rng.gen(),
+            '_' => { // horizontal if
+                let top = stack.pop();
+                if top == 0 {
+                    pointer.direction = Direction::Right;
+                } else {
+                    pointer.direction = Direction::Left;
+                }
+            }
+            '|' => { // vertical if
+                let top = stack.pop();
+                if top == 0 {
+                    pointer.direction = Direction::Down;
+                } else {
+                    pointer.direction = Direction::Up;
+                }
+            }
             '+' => { // addition
                 let a = stack.pop();
                 let b = stack.pop();
@@ -131,7 +150,7 @@ fn run(program: Program) {
             '-' => { // subtraction
                 let a = stack.pop();
                 let b = stack.pop();
-                stack.push(a - b);
+                stack.push(b - a);
             }
             '*' => { // multiplication
                 let a = stack.pop();
@@ -141,16 +160,16 @@ fn run(program: Program) {
             '/' => { // division
                 let a = stack.pop();
                 let b = stack.pop();
-                stack.push(a / b);
+                stack.push(b / a);
             }
             '%' => { // modulo
                 let a = stack.pop();
                 let b = stack.pop();
-                stack.push(a % b);
+                stack.push(b % a);
             }
             '!' => { // logical not
                 let b = stack.pop();
-                if let 0 = b {
+                if b == 0 {
                     stack.push(1);
                 } else {
                     stack.push(0);
@@ -179,12 +198,13 @@ fn run(program: Program) {
             '$' => { // discard top of stack
                 stack.pop();
             }
-            '.' => println!("{}", stack.pop()),
+            '.' => print!("{}", stack.pop()),
             '@' => break,
             c @ '0'...'9' => stack.push(c.to_digit(10).unwrap_or(0) as usize),
             _ => {}
         }
 
+        // move pointer
         match pointer.direction {
             Direction::Up => { pointer.position.y -= 1 }
             Direction::Down => { pointer.position.y += 1 }

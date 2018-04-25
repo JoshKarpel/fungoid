@@ -4,3 +4,5 @@ version = "0.1.0"
 authors = ["Josh Karpel"]
 
 [dependencies]
+rand = "0.4.2"
+rand_derive = "0.3.1"

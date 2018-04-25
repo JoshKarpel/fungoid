@@ -99,17 +99,18 @@ impl InstructionPointer {
     }
 }
 
-struct Stack(Vec<usize>);
+struct Stack(Vec<i64>);
 
 impl Stack {
     fn new() -> Stack {
-        Stack(Vec::<usize>::new())
+        Stack(Vec::<i64>::new())
     }
-    fn push(&mut self, val: usize) {
+
+    fn push(&mut self, val: i64) {
         self.0.push(val);
     }
 
-    fn pop(&mut self) -> usize {
+    fn pop(&mut self) -> i64 {
         self.0.pop().unwrap_or(0)
     }
 }
@@ -207,7 +208,7 @@ fn run(program: Program) -> u64 {
             }
             '.' => print!("{}", stack.pop()),
             '@' => break,
-            c @ '0'...'9' => stack.push(c.to_digit(10).unwrap_or(0) as usize),
+            c @ '0'...'9' => stack.push(c.to_digit(10).unwrap_or(0) as i64),
             _ => {}
         }
 

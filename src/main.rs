@@ -12,8 +12,9 @@ use time::PreciseTime;
 
 fn main() {
 //    let program = Program::from_str("0956+++.@");
-    let program = Program::from_str(&vec![r#"5>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
-//    let program = Program::from_str(r#"64+"!dlroW ,olleH">:#,_@"#);
+//    let program = Program::from_str(&vec![r#"9>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
+//    let program = Program::from_str(r#"64+"!dlroW ,olleH">#:,_@"#);
+    let program = Program::from_str(r#""!dlroW ,olleH",,,,,,,,,,,,,,@"#);
 
     println!("PROGRAM");
     println!("{}", vec!["-"; 80].join(""));
@@ -124,6 +125,8 @@ fn run(program: Program) -> u64 {
 
     let mut instruction_count = 0;
 
+    let mut string_mode = false;
+
     loop {
         instruction_count += 1;
 
@@ -132,6 +135,8 @@ fn run(program: Program) -> u64 {
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
         match program.get(&pointer.position) {
+            '"' => string_mode = !string_mode,
+            c if string_mode => stack.push(c as u8 as i64),
             '^' => pointer.direction = Direction::Up,
             'v' => pointer.direction = Direction::Down,
             '>' => pointer.direction = Direction::Right,
@@ -210,21 +215,27 @@ fn run(program: Program) -> u64 {
                 stack.pop();
             }
             '.' => print!("{}", stack.pop()),
+            ',' => print!("{}", stack.pop() as u8 as char),
+            '#' => move_pointer(&mut pointer),
             '@' => break,
             c @ '0'...'9' => stack.push(c.to_digit(10).unwrap_or(0) as i64),
-            _ => {}
+            c => { panic!("Unrecognized instruction! {}", c) }
         }
 
         // move pointer
-        match pointer.direction {
-            Direction::Up => { pointer.position.y -= 1 }
-            Direction::Down => { pointer.position.y += 1 }
-            Direction::Right => { pointer.position.x += 1 }
-            Direction::Left => { pointer.position.x -= 1 }
-        }
+        move_pointer(&mut pointer);
     }
 
     instruction_count
+}
+
+fn move_pointer(pointer: &mut InstructionPointer) {
+    match pointer.direction {
+        Direction::Up => { pointer.position.y -= 1 }
+        Direction::Down => { pointer.position.y += 1 }
+        Direction::Right => { pointer.position.x += 1 }
+        Direction::Left => { pointer.position.x -= 1 }
+    }
 }
 
 fn benchmark(program: Program) {

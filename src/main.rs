@@ -11,8 +11,8 @@ use rand::Rng;
 use time::PreciseTime;
 
 fn main() {
-    let program = Program::from_str("0956+++.@");
-//    let program = Program::from_str(&vec![r#"5>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
+//    let program = Program::from_str("0956+++.@");
+    let program = Program::from_str(&vec![r#"5>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
 //    let program = Program::from_str(r#"64+"!dlroW ,olleH">:#,_@"#);
 
     println!("PROGRAM");
@@ -99,6 +99,7 @@ impl InstructionPointer {
     }
 }
 
+#[derive(Debug)]
 struct Stack(Vec<i64>);
 
 impl Stack {
@@ -125,6 +126,8 @@ fn run(program: Program) -> u64 {
 
     loop {
         instruction_count += 1;
+
+//        println!("{:?} : {:?}", program.get(&pointer.position), stack);
 
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
@@ -200,8 +203,8 @@ fn run(program: Program) -> u64 {
             '\\' => { // swap top of stack
                 let a = stack.pop();
                 let b = stack.pop();
-                stack.push(b);
                 stack.push(a);
+                stack.push(b);
             }
             '$' => { // discard top of stack
                 stack.pop();

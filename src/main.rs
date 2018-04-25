@@ -1,12 +1,14 @@
 extern crate rand;
 #[macro_use]
 extern crate rand_derive;
+extern crate time;
 
 
 use std::fmt;
 use std::cmp::Ordering;
 
 use rand::Rng;
+use time::PreciseTime;
 
 fn main() {
     let program = Program::from_str("0956+++.@");
@@ -19,7 +21,8 @@ fn main() {
     println!("{}", vec!["-"; 80].join(""));
 
     println!("OUTPUT");
-    run(program);
+//    run(program);
+    benchmark(program);
 }
 
 struct Program([[char; 80]; 30]);
@@ -111,13 +114,17 @@ impl Stack {
     }
 }
 
-fn run(program: Program) {
+fn run(program: Program) -> u64 {
     let mut pointer = InstructionPointer::new();
     let mut stack = Stack::new();
 
     let mut rng = rand::thread_rng();
 
+    let mut instruction_count = 0;
+
     loop {
+        instruction_count += 1;
+
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
         match program.get(&pointer.position) {
@@ -212,4 +219,18 @@ fn run(program: Program) {
             Direction::Left => { pointer.position.x -= 1 }
         }
     }
+
+    instruction_count
+}
+
+fn benchmark(program: Program) {
+    let start = PreciseTime::now();
+    let instruction_count = run(program);
+    let end = PreciseTime::now();
+
+    let duration = start.to(end);
+    println!("\n");
+    println!("Executed {:?} instructions in {:?} μs", instruction_count, duration.num_microseconds().unwrap());
+    let num_seconds = 1.0e-9 * duration.num_nanoseconds().unwrap() as f64;
+    println!("Running at {:.0} instructions/second", instruction_count as f64 / num_seconds);
 }

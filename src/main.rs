@@ -7,6 +7,7 @@ extern crate separator;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io;
 use std::fmt;
 use std::cmp::Ordering;
 
@@ -14,23 +15,12 @@ use rand::Rng;
 use time::PreciseTime;
 use separator::Separatable;
 
-fn main() {
-//    let program = Program::from_str("0956+++.@");
-//    let program = Program::from_str(&vec![r#"9>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
-//    let program = Program::from_str(r#""!dlroW ,olleH",,,,,,,,,,,,,,@"#);
-//    let program = Program::from_str(&vec![r#" >25*"!dlrow ,olleH":v "#,
-//                                          r#"                  v:,_@"#,
-//                                          r#"                  >  ^ "#].join("\n"));
 
+fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
 
-    let mut f = File::open(filename).expect("file not found");
-    let mut contents = String::new();
-    f.read_to_string(&mut contents)
-        .expect("failed to read file");
-
-    let program = Program::from_str(&contents);
+    let program = Program::from_file(&filename);
 
     println!("PROGRAM");
     println!("{}", vec!["-"; 80].join(""));
@@ -53,21 +43,29 @@ impl Program {
     fn from_str(s: &str) -> Program {
         let mut program = Program::new();
 
-        for (y, line) in s.split("\n").enumerate() {
+        for (y, line) in s.split('\n').enumerate() {
             for (x, ch) in line.chars().enumerate() {
-                program.insert(&Position { x, y }, ch);
+                program.set(&Position { x, y }, ch);
             }
         }
 
         program
     }
 
-    fn insert(&mut self, pos: &Position, c: char) {
-        self.0[pos.y][pos.x] = c;
+    fn from_file(path: &str) -> Program {
+        let mut f = File::open(path).expect("file not found");
+        let mut contents = String::new();
+        f.read_to_string(&mut contents).expect("failed to read file");
+
+        Program::from_str(&contents)
     }
 
     fn get(&self, pos: &Position) -> char {
         self.0[pos.y][pos.x]
+    }
+
+    fn set(&mut self, pos: &Position, c: char) {
+        self.0[pos.y][pos.x] = c;
     }
 }
 
@@ -75,11 +73,11 @@ impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut chars = Vec::new();
 
-        for line in self.0.iter() {
+        for line in &self.0 {
             for c in line.iter() {
                 chars.push(c.to_string());
             }
-            chars.push("\n".to_string());
+            chars.push('\n'.to_string());
         }
 
         write!(f, "{}", chars.join(""))
@@ -133,7 +131,7 @@ impl Stack {
     }
 }
 
-fn run(program: Program) -> u64 {
+fn run(mut program: Program) -> u64 {
     let mut pointer = InstructionPointer::new();
     let mut stack = Stack::new();
 
@@ -152,7 +150,7 @@ fn run(program: Program) -> u64 {
         // https://esolangs.org/wiki/Befunge#Instructions
         match program.get(&pointer.position) {
             '"' => string_mode = !string_mode,
-            c if string_mode => stack.push(c as u8 as i64),
+            c if string_mode => stack.push(i64::from(c as u8)),
             '^' => pointer.direction = Direction::Up,
             'v' => pointer.direction = Direction::Down,
             '>' => pointer.direction = Direction::Right,
@@ -218,7 +216,7 @@ fn run(program: Program) -> u64 {
             }
             ':' => { // duplicate top of stack
                 let a = stack.pop();
-                stack.push(a.clone());
+                stack.push(a);
                 stack.push(a);
             }
             '\\' => { // swap top of stack
@@ -233,13 +231,34 @@ fn run(program: Program) -> u64 {
             '.' => print!("{}", stack.pop()),
             ',' => print!("{}", stack.pop() as u8 as char),
             '#' => move_pointer(&mut pointer),
+            'g' => { // get
+                let y = stack.pop();
+                let x = stack.pop();
+                stack.push(i64::from(program.get(&Position { x: x as usize, y: y as usize }) as u8));
+            }
+            'p' => { // push
+                let y = stack.pop();
+                let x = stack.pop();
+                let v = stack.pop();
+                program.set(&Position { x: x as usize, y: y as usize }, v as u8 as char);
+            }
+            '&' => { // get int from user
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("failed to read int");
+                println!("{}", input);
+                stack.push(input.trim().parse::<i64>().unwrap());
+            }
+            '~' => { // get char from user
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("failed to read char");
+                stack.push(i64::from(input.chars().next().unwrap() as u8));
+            }
             '@' => break,
-            c @ '0'...'9' => stack.push(c.to_digit(10).unwrap_or(0) as i64),
+            c @ '0'...'9' => stack.push(i64::from(c.to_digit(10).unwrap())),
             ' ' => {}
             c => { panic!("Unrecognized instruction! {}", c) }
         }
 
-        // move pointer
         move_pointer(&mut pointer);
     }
 

@@ -2,19 +2,35 @@ extern crate rand;
 #[macro_use]
 extern crate rand_derive;
 extern crate time;
+extern crate separator;
 
-
+use std::env;
+use std::fs::File;
+use std::io::prelude::*;
 use std::fmt;
 use std::cmp::Ordering;
 
 use rand::Rng;
 use time::PreciseTime;
+use separator::Separatable;
 
 fn main() {
 //    let program = Program::from_str("0956+++.@");
 //    let program = Program::from_str(&vec![r#"9>:1-:v v *_$.@ "#, r#" ^    _$>\:^"#].join("\n"));
-//    let program = Program::from_str(r#"64+"!dlroW ,olleH">#:,_@"#);
-    let program = Program::from_str(r#""!dlroW ,olleH",,,,,,,,,,,,,,@"#);
+//    let program = Program::from_str(r#""!dlroW ,olleH",,,,,,,,,,,,,,@"#);
+//    let program = Program::from_str(&vec![r#" >25*"!dlrow ,olleH":v "#,
+//                                          r#"                  v:,_@"#,
+//                                          r#"                  >  ^ "#].join("\n"));
+
+    let args: Vec<String> = env::args().collect();
+    let filename = &args[1];
+
+    let mut f = File::open(filename).expect("file not found");
+    let mut contents = String::new();
+    f.read_to_string(&mut contents)
+        .expect("failed to read file");
+
+    let program = Program::from_str(&contents);
 
     println!("PROGRAM");
     println!("{}", vec!["-"; 80].join(""));
@@ -219,6 +235,7 @@ fn run(program: Program) -> u64 {
             '#' => move_pointer(&mut pointer),
             '@' => break,
             c @ '0'...'9' => stack.push(c.to_digit(10).unwrap_or(0) as i64),
+            ' ' => {}
             c => { panic!("Unrecognized instruction! {}", c) }
         }
 
@@ -247,5 +264,5 @@ fn benchmark(program: Program) {
     println!("\n");
     println!("Executed {:?} instructions in {:?} μs", instruction_count, duration.num_microseconds().unwrap());
     let num_seconds = 1.0e-9 * duration.num_nanoseconds().unwrap() as f64;
-    println!("Running at {:.0} instructions/second", instruction_count as f64 / num_seconds);
+    println!("Running at {} instructions/second", ((instruction_count as f64 / num_seconds) as u64).separated_string());
 }

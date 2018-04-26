@@ -7,3 +7,4 @@ authors = ["Josh Karpel"]
 rand = "0.4.2"
 rand_derive = "0.3.1"
 time = "0.1.39"
+separator = "0.3.1"

@@ -23,6 +23,7 @@ version = "0.1.0"
 dependencies = [
  "rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand_derive 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "separator 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -58,6 +59,11 @@ dependencies = [
 [[package]]
 name = "redox_syscall"
 version = "0.1.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "separator"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -121,6 +127,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "eba5f8cb59cc50ed56be8880a5c7b496bfd9bd26394e176bc67884094145c2c5"
 "checksum rand_derive 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "5d34373ebb1bba42a5cb2386a3ea286ab84bba0f426d07bbc822687f537d6c6a"
 "checksum redox_syscall 0.1.37 (registry+https://github.com/rust-lang/crates.io-index)" = "0d92eecebad22b767915e4d529f89f28ee96dbbf5a4810d2b844373f136417fd"
+"checksum separator 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7acc4d818f952ed02e7911df5da8098c8b00a3c5ba2832e035a750b56e8fc32b"
 "checksum syn 0.11.11 (registry+https://github.com/rust-lang/crates.io-index)" = "d3b891b9015c88c576343b9b3e41c2c11a51c219ef067b264bd9c8aa9b441dad"
 "checksum synom 0.11.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a393066ed9010ebaed60b9eafa373d4b1baac186dd7e008555b0f702b51945b6"
 "checksum time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)" = "a15375f1df02096fb3317256ce2cee6a1f42fc84ea5ad5fc8c421cfe40c73098"

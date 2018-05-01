@@ -1,10 +1,23 @@
+extern crate clap;
 extern crate fungoid;
 
-use std::env;
+use clap::{App, Arg, SubCommand};
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let filename = &args[1];
+    let matches = App::new("fungoid")
+        .version("0.0.1")
+        .author("Josh Karpel <josh.karpel@gmail.com>")
+        .about("A Befunge interpreter written in Rust")
+        .arg(Arg::with_name("INPUT")
+            .help("file to read program from")
+            .required(true)
+            .index(1))
+        .arg(Arg::with_name("benchmark")
+            .short("b")
+            .help("enable benchmarking"))
+        .get_matches();
+
+    let filename = matches.value_of("INPUT").unwrap();
 
     let program = fungoid::Program::from_file(&filename);
 
@@ -13,6 +26,9 @@ fn main() {
     println!("{}", vec!["-"; 80].join(""));
 
     println!("OUTPUT");
-//    run(program);
-    fungoid::benchmark(program);
+    if matches.is_present("benchmark") {
+        fungoid::benchmark(program);
+    } else {
+        fungoid::run(program);
+    }
 }

@@ -15,14 +15,12 @@ use rand::Rng;
 use time::PreciseTime;
 use separator::Separatable;
 
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
 
     let program = Program::from_file(&filename);
 
-    println!("PROGRAM");
     println!("{}", vec!["-"; 80].join(""));
     println!("{}", program);
     println!("{}", vec!["-"; 80].join(""));
@@ -84,13 +82,13 @@ impl fmt::Display for Program {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Position {
     x: usize,
     y: usize,
 }
 
-#[derive(Debug, Copy, Clone, Rand)]
+#[derive(Debug, Copy, Clone, Rand, PartialEq, Eq)]
 enum Direction {
     Up,
     Down,
@@ -99,7 +97,7 @@ enum Direction {
 }
 
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InstructionPointer {
     position: Position,
     direction: Direction,
@@ -137,7 +135,7 @@ fn run(mut program: Program) -> u64 {
 
     let mut rng = rand::thread_rng();
 
-    let mut instruction_count = 0;
+    let mut instruction_count: u64 = 0;
 
     let mut string_mode = false;
 

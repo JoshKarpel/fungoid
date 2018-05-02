@@ -1,3 +1,5 @@
+#![feature(test)]
+
 extern crate rand;
 #[macro_use]
 extern crate rand_derive;
@@ -14,7 +16,7 @@ use rand::Rng;
 use time::PreciseTime;
 use separator::Separatable;
 
-
+#[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
 
 
@@ -267,4 +269,24 @@ pub fn benchmark(program: Program) {
     println!("Executed {:?} instructions in {:?} μs", instruction_count, duration.num_microseconds().unwrap());
     let num_seconds = 1.0e-9 * duration.num_nanoseconds().unwrap() as f64;
     println!("Running at {} instructions/second", ((instruction_count as f64 / num_seconds) as u64).separated_string());
+}
+
+
+#[cfg(test)]
+mod tests {
+    extern crate test;
+
+    use self::test::Bencher;
+
+    use super::*;
+
+    #[bench]
+    fn bench_factorial(b: &mut Bencher) {
+        let program = Program::from_str(
+            &vec![r#"9>:1-:v v *_$.@ "#,
+                  r#" ^    _$>\:^    "#]
+                .join("\n"));
+
+        b.iter(|| run(program.clone()));
+    }
 }

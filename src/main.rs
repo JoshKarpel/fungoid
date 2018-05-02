@@ -1,7 +1,7 @@
 extern crate clap;
 extern crate fungoid;
 
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg};
 
 fn main() {
     let matches = App::new("fungoid")

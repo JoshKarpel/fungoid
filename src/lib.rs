@@ -1,14 +1,17 @@
 extern crate rand;
-extern crate separator;
 extern crate time;
+extern crate separator;
 
-use std::cmp::Ordering;
-use std::fmt;
-use std::fs::File;
-use std::io;
-use std::io::prelude::*;
+use std::{
+    cmp::Ordering,
+    fmt,
+    fs::File,
+    io,
+    io::prelude::*,
+};
 
 use rand::{
+    prelude::*,
     distributions::{Distribution, Standard},
     Rng,
 };
@@ -125,167 +128,179 @@ impl Stack {
     }
 }
 
-pub fn run(mut program: Program) -> u64 {
-    let mut pointer = InstructionPointer::new();
-    let mut stack = Stack::new();
+pub struct ProgramState {
+    program: Program,
+    pointer: InstructionPointer,
+    stack: Stack,
+    rng: ThreadRng,
+    string_mode: bool,
+}
 
-    let mut rng = rand::thread_rng();
-
-    let mut instruction_count: u64 = 0;
-
-    let mut string_mode = false;
-
-    loop {
-        instruction_count += 1;
-
-        // println!("{:?} : {:?}", program.get(&pointer.position), stack);
-
-        // execute instruction at pointer
-        // https://esolangs.org/wiki/Befunge#Instructions
-        match program.get(&pointer.position) {
-            '"' => string_mode = !string_mode,
-            c if string_mode => stack.push(i64::from(c as u8)),
-            '^' => pointer.direction = Direction::Up,
-            'v' => pointer.direction = Direction::Down,
-            '>' => pointer.direction = Direction::Right,
-            '<' => pointer.direction = Direction::Left,
-            '?' => pointer.direction = rng.gen(),
-            '_' => {
-                // horizontal if
-                let top = stack.pop();
-                if top == 0 {
-                    pointer.direction = Direction::Right;
-                } else {
-                    pointer.direction = Direction::Left;
-                }
-            }
-            // vertical if
-            '|' => {
-                let top = stack.pop();
-                if top == 0 {
-                    pointer.direction = Direction::Down;
-                } else {
-                    pointer.direction = Direction::Up;
-                }
-            }
-            // addition
-            '+' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                stack.push(a + b);
-            }
-            // subtraction
-            '-' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                stack.push(b - a);
-            }
-            // multiplication
-            '*' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                stack.push(a * b);
-            }
-            // division
-            '/' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                stack.push(b / a);
-            }
-            // modulo
-            '%' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                stack.push(b % a);
-            }
-            // logical not
-            '!' => {
-                let b = stack.pop();
-                if b == 0 {
-                    stack.push(1);
-                } else {
-                    stack.push(0);
-                }
-            }
-            // greater than
-            '`' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                if let Ordering::Greater = b.cmp(&a) {
-                    stack.push(1)
-                } else {
-                    stack.push(0);
-                }
-            }
-            // duplicate top of stack
-            ':' => {
-                let a = stack.pop();
-                stack.push(a);
-                stack.push(a);
-            }
-            // swap top of stack
-            '\\' => {
-                let a = stack.pop();
-                let b = stack.pop();
-                stack.push(a);
-                stack.push(b);
-            }
-            // discard top of stack
-            '$' => {
-                stack.pop();
-            }
-            '.' => print!("{}", stack.pop()),
-            ',' => print!("{}", stack.pop() as u8 as char),
-            '#' => move_pointer(&mut pointer),
-            // get
-            'g' => {
-                let y = stack.pop();
-                let x = stack.pop();
-                stack.push(i64::from(program.get(&Position {
-                    x: x as usize,
-                    y: y as usize,
-                }) as u8));
-            }
-            // push
-            'p' => {
-                let y = stack.pop();
-                let x = stack.pop();
-                let v = stack.pop();
-                program.set(
-                    &Position {
-                        x: x as usize,
-                        y: y as usize,
-                    },
-                    v as u8 as char,
-                );
-            }
-            // get int from user
-            '&' => {
-                let mut input = String::new();
-                io::stdin()
-                    .read_line(&mut input)
-                    .expect("failed to read int");
-                println!("{}", input);
-                stack.push(input.trim().parse::<i64>().unwrap());
-            }
-            // get char from user
-            '~' => {
-                let mut input = String::new();
-                io::stdin()
-                    .read_line(&mut input)
-                    .expect("failed to read char");
-                stack.push(i64::from(input.chars().next().unwrap() as u8));
-            }
-            '@' => break,
-            c @ '0'..='9' => stack.push(i64::from(c.to_digit(10).unwrap())),
-            ' ' => {}
-            c => panic!("Unrecognized instruction! {}", c),
+impl ProgramState {
+    fn new(program: Program) -> Self {
+        ProgramState {
+            program,
+            pointer: InstructionPointer::new(),
+            stack: Stack::new(),
+            rng: rand::thread_rng(),
+            string_mode: false,
         }
-
-        move_pointer(&mut pointer);
     }
 
-    instruction_count
+    fn run(&mut self) -> i64 {
+        let mut instruction_count = 0;
+        loop {
+            instruction_count += 1;
+
+            // println!("{:?} : {:?}", program.get(&pointer.position), self.stack);
+
+            // execute instruction at pointer
+            // https://esolangs.org/wiki/Befunge#Instructions
+            match self.program.get(&self.pointer.position) {
+                '"' => self.string_mode = !self.string_mode,
+                c if self.string_mode => self.stack.push(i64::from(c as u8)),
+                '^' => self.pointer.direction = Direction::Up,
+                'v' => self.pointer.direction = Direction::Down,
+                '>' => self.pointer.direction = Direction::Right,
+                '<' => self.pointer.direction = Direction::Left,
+                '?' => self.pointer.direction = self.rng.gen(),
+                '_' => {
+                    // horizontal if
+                    let top = self.stack.pop();
+                    if top == 0 {
+                        self.pointer.direction = Direction::Right;
+                    } else {
+                        self.pointer.direction = Direction::Left;
+                    }
+                }
+                // vertical if
+                '|' => {
+                    let top = self.stack.pop();
+                    if top == 0 {
+                        self.pointer.direction = Direction::Down;
+                    } else {
+                        self.pointer.direction = Direction::Up;
+                    }
+                }
+                // addition
+                '+' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    self.stack.push(a + b);
+                }
+                // subtraction
+                '-' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    self.stack.push(b - a);
+                }
+                // multiplication
+                '*' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    self.stack.push(a * b);
+                }
+                // division
+                '/' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    self.stack.push(b / a);
+                }
+                // modulo
+                '%' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    self.stack.push(b % a);
+                }
+                // logical not
+                '!' => {
+                    let b = self.stack.pop();
+                    if b == 0 {
+                        self.stack.push(1);
+                    } else {
+                        self.stack.push(0);
+                    }
+                }
+                // greater than
+                '`' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    if let Ordering::Greater = b.cmp(&a) {
+                        self.stack.push(1)
+                    } else {
+                        self.stack.push(0);
+                    }
+                }
+                // duplicate top of self.stack
+                ':' => {
+                    let a = self.stack.pop();
+                    self.stack.push(a);
+                    self.stack.push(a);
+                }
+                // swap top of self.stack
+                '\\' => {
+                    let a = self.stack.pop();
+                    let b = self.stack.pop();
+                    self.stack.push(a);
+                    self.stack.push(b);
+                }
+                // discard top of self.stack
+                '$' => {
+                    self.stack.pop();
+                }
+                '.' => print!("{}", self.stack.pop()),
+                ',' => print!("{}", self.stack.pop() as u8 as char),
+                '#' => move_pointer(&mut self.pointer),
+                // get
+                'g' => {
+                    let y = self.stack.pop();
+                    let x = self.stack.pop();
+                    self.stack.push(i64::from(self.program.get(&Position {
+                        x: x as usize,
+                        y: y as usize,
+                    }) as u8));
+                }
+                // push
+                'p' => {
+                    let y = self.stack.pop();
+                    let x = self.stack.pop();
+                    let v = self.stack.pop();
+                    self.program.set(
+                        &Position {
+                            x: x as usize,
+                            y: y as usize,
+                        },
+                        v as u8 as char,
+                    );
+                }
+                // get int from user
+                '&' => {
+                    let mut input = String::new();
+                    io::stdin()
+                        .read_line(&mut input)
+                        .expect("failed to read int");
+                    println!("{}", input);
+                    self.stack.push(input.trim().parse::<i64>().unwrap());
+                }
+                // get char from user
+                '~' => {
+                    let mut input = String::new();
+                    io::stdin()
+                        .read_line(&mut input)
+                        .expect("failed to read char");
+                    self.stack.push(i64::from(input.chars().next().unwrap() as u8));
+                }
+                '@' => break,
+                c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
+                ' ' => {}
+                c => panic!("Unrecognized instruction! {}", c),
+            }
+
+            move_pointer(&mut self.pointer);
+        }
+
+        instruction_count
+    }
 }
 
 fn move_pointer(pointer: &mut InstructionPointer) {
@@ -297,9 +312,13 @@ fn move_pointer(pointer: &mut InstructionPointer) {
     }
 }
 
+pub fn run(program: Program) -> i64 {
+    ProgramState::new(program).run()
+}
+
 pub fn time(program: Program) {
     let start = PreciseTime::now();
-    let instruction_count = run(program);
+    let instruction_count = ProgramState::new(program).run();
     let end = PreciseTime::now();
 
     let duration = start.to(end);
@@ -315,3 +334,11 @@ pub fn time(program: Program) {
         ((instruction_count as f64 / num_seconds) as u64).separated_string()
     );
 }
+
+// #[cfg(test)]
+// mod tests {
+//     #[test]
+//     fn it_works() {
+//         assert_eq!(2 + 2, 4);
+//     }
+// }

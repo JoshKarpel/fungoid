@@ -15,15 +15,16 @@ fn main() {
                 .index(1),
         )
         .arg(Arg::with_name("time").long("time").help("enable timing"))
+        .arg(Arg::with_name("show").long("show").help("show program"))
         .get_matches();
 
     let filename = matches.value_of("FILE").unwrap();
 
     let program = fungoid::Program::from_file(&filename);
 
-    println!("{}", vec!["-"; 80].join(""));
-    println!("{}", program);
-    println!("{}", vec!["-"; 80].join(""));
+    if matches.is_present("show") {
+        println!("{}", program);
+    }
 
     if matches.is_present("time") {
         fungoid::time(program);

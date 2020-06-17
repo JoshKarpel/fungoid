@@ -53,13 +53,17 @@ impl Program {
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut chars = Vec::new();
-
+        let bar = vec!["─"; 80].join("");
+        chars.push(format!("┌{}┐\n", bar));
         for line in &self.0 {
+            chars.push("│".to_string());
             for c in line.iter() {
                 chars.push(c.to_string());
             }
+            chars.push("│".to_string());
             chars.push('\n'.to_string());
         }
+        chars.push(format!("└{}┘", bar));
 
         write!(f, "{}", chars.join(""))
     }

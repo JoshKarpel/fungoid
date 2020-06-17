@@ -132,6 +132,7 @@ pub struct ProgramState<'input, 'output, 'error> {
     stack: Stack,
     rng: ThreadRng,
     string_mode: bool,
+    instruction_count: u64,
     input: &'input mut dyn Read,
     output: &'output mut dyn Write,
     error: &'error mut dyn Write,
@@ -150,16 +151,16 @@ impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
             stack: Stack::new(),
             rng: rand::thread_rng(),
             string_mode: false,
+            instruction_count: 0,
             input,
             output,
             error,
         }
     }
 
-    fn run(&mut self) -> i64 {
-        let mut instruction_count = 0;
+    fn run(mut self) -> Self {
         loop {
-            instruction_count += 1;
+            self.instruction_count += 1;
 
             // println!("{:?} : {:?}", program.get(&pointer.position), self.stack);
 
@@ -315,7 +316,7 @@ impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
             move_pointer(&mut self.pointer);
         }
 
-        instruction_count
+        self
     }
 }
 
@@ -328,14 +329,14 @@ fn move_pointer(pointer: &mut InstructionPointer) {
     }
 }
 
-pub fn run(program: Program) -> i64 {
+pub fn run(program: Program) -> u64 {
     ProgramState::new(
         program,
         &mut io::stdin(),
         &mut io::stdout(),
         &mut io::stderr(),
     )
-    .run()
+        .run().instruction_count
 }
 
 pub fn time(program: Program) {
@@ -367,7 +368,7 @@ mod tests {
                 r#"                 v:,_@"#,
                 r#"                 >  ^ "#,
             ]
-            .join("\n"),
+                .join("\n"),
         );
         let mut output = Vec::new();
         ProgramState::new(program, &mut io::stdin(), &mut output, &mut Vec::new()).run();

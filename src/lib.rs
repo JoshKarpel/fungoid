@@ -101,7 +101,7 @@ struct InstructionPointer {
 }
 
 impl InstructionPointer {
-    fn new() -> InstructionPointer {
+    fn new() -> Self {
         InstructionPointer {
             position: Position { x: 0, y: 0 },
             direction: Direction::Right,
@@ -363,13 +363,11 @@ mod tests {
     #[test]
     fn hello_world() {
         let program = Program::from_str(
-            &vec![
-                r#">25*"!dlrow ,olleH":v "#,
-                r#"                 v:,_@"#,
-                r#"                 >  ^ "#,
-            ]
-                .join("\n"),
+r#">25*"!dlrow ,olleH":v "
+  "                 v:,_@"
+  "                 >  ^ "#
         );
+        println!("{}", program);
         let mut output = Vec::new();
         ProgramState::new(program, &mut io::stdin(), &mut output, &mut Vec::new()).run();
         println!("{:?}", output);

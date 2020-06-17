@@ -1,18 +1,12 @@
 extern crate rand;
-extern crate time;
 extern crate separator;
+extern crate time;
 
-use std::{
-    cmp::Ordering,
-    fmt,
-    fs::File,
-    io,
-    io::prelude::*,
-};
+use std::{cmp::Ordering, fmt, fs::File, io, io::prelude::*};
 
 use rand::{
-    prelude::*,
     distributions::{Distribution, Standard},
+    prelude::*,
     Rng,
 };
 use separator::Separatable;
@@ -128,22 +122,33 @@ impl Stack {
     }
 }
 
-pub struct ProgramState {
+pub struct ProgramState<'input, 'output, 'error> {
     program: Program,
     pointer: InstructionPointer,
     stack: Stack,
     rng: ThreadRng,
     string_mode: bool,
+    input: &'input mut dyn Read,
+    output: &'output mut dyn Write,
+    error: &'error mut dyn Write,
 }
 
-impl ProgramState {
-    fn new(program: Program) -> Self {
+impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
+    fn new(
+        program: Program,
+        input: &'input mut dyn Read,
+        output: &'output mut dyn Write,
+        error: &'error mut dyn Write,
+    ) -> Self {
         ProgramState {
             program,
             pointer: InstructionPointer::new(),
             stack: Stack::new(),
             rng: rand::thread_rng(),
             string_mode: false,
+            input,
+            output,
+            error,
         }
     }
 
@@ -248,8 +253,15 @@ impl ProgramState {
                 '$' => {
                     self.stack.pop();
                 }
-                '.' => print!("{}", self.stack.pop()),
-                ',' => print!("{}", self.stack.pop() as u8 as char),
+                '.' => {
+                    write!(self.output, "{}", self.stack.pop()).expect("Failed to write int");
+                    ()
+                }
+                ',' => {
+                    write!(self.output, "{}", self.stack.pop() as u8 as char)
+                        .expect("Failed to write char");
+                    ()
+                }
                 '#' => move_pointer(&mut self.pointer),
                 // get
                 'g' => {
@@ -276,19 +288,19 @@ impl ProgramState {
                 // get int from user
                 '&' => {
                     let mut input = String::new();
-                    io::stdin()
-                        .read_line(&mut input)
+                    self.input
+                        .read_to_string(&mut input)
                         .expect("failed to read int");
-                    println!("{}", input);
                     self.stack.push(input.trim().parse::<i64>().unwrap());
                 }
                 // get char from user
                 '~' => {
                     let mut input = String::new();
-                    io::stdin()
-                        .read_line(&mut input)
+                    self.input
+                        .read_to_string(&mut input)
                         .expect("failed to read char");
-                    self.stack.push(i64::from(input.chars().next().unwrap() as u8));
+                    self.stack
+                        .push(i64::from(input.chars().next().unwrap() as u8));
                 }
                 '@' => break,
                 c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
@@ -313,12 +325,18 @@ fn move_pointer(pointer: &mut InstructionPointer) {
 }
 
 pub fn run(program: Program) -> i64 {
-    ProgramState::new(program).run()
+    ProgramState::new(
+        program,
+        &mut io::stdin(),
+        &mut io::stdout(),
+        &mut io::stderr(),
+    )
+    .run()
 }
 
 pub fn time(program: Program) {
     let start = PreciseTime::now();
-    let instruction_count = ProgramState::new(program).run();
+    let instruction_count = run(program);
     let end = PreciseTime::now();
 
     let duration = start.to(end);
@@ -335,10 +353,25 @@ pub fn time(program: Program) {
     );
 }
 
-// #[cfg(test)]
-// mod tests {
-//     #[test]
-//     fn it_works() {
-//         assert_eq!(2 + 2, 4);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::{Program, ProgramState};
+
+    use std::io;
+
+    #[test]
+    fn hello_world() {
+        let program = Program::from_str(
+            &vec![
+                r#">25*"!dlrow ,olleH":v "#,
+                r#"                 v:,_@"#,
+                r#"                 >  ^ "#,
+            ]
+            .join("\n"),
+        );
+        let mut output = Vec::new();
+        ProgramState::new(program, &mut io::stdin(), &mut output, &mut Vec::new()).run();
+        println!("{:?}", output);
+        assert_eq!("Hello, world!\n", String::from_utf8(output).unwrap());
+    }
+}

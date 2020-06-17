@@ -25,7 +25,6 @@ fn main() {
     println!("{}", program);
     println!("{}", vec!["-"; 80].join(""));
 
-    println!("OUTPUT");
     if matches.is_present("time") {
         fungoid::time(program);
     } else {

@@ -1,11 +1,11 @@
 [package]
 name = "fungoid"
 version = "0.1.0"
-authors = ["Josh Karpel"]
+authors = ["Josh Karpel <josh.karpel@gmail.com>"]
+edition = '2018'
 
 [dependencies]
-rand = "0.4.2"
-rand_derive = "0.3.1"
-time = "0.1.39"
-separator = "0.3.1"
 clap = "2.31.2"
+rand = "0.7.3"
+time = "0.1.43"
+separator = "0.4.1"

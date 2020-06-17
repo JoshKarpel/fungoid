@@ -1,24 +1,22 @@
-#![feature(test)]
-
 extern crate rand;
-#[macro_use]
-extern crate rand_derive;
-extern crate time;
 extern crate separator;
+extern crate time;
 
-use std::fs::File;
-use std::io::prelude::*;
-use std::io;
-use std::fmt;
 use std::cmp::Ordering;
+use std::fmt;
+use std::fs::File;
+use std::io;
+use std::io::prelude::*;
 
-use rand::Rng;
-use time::PreciseTime;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use separator::Separatable;
+use time::PreciseTime;
 
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
-
 
 impl Program {
     fn new() -> Program {
@@ -40,7 +38,8 @@ impl Program {
     pub fn from_file(path: &str) -> Program {
         let mut f = File::open(path).expect("file not found");
         let mut contents = String::new();
-        f.read_to_string(&mut contents).expect("failed to read file");
+        f.read_to_string(&mut contents)
+            .expect("failed to read file");
 
         Program::from_str(&contents)
     }
@@ -75,7 +74,7 @@ struct Position {
     y: usize,
 }
 
-#[derive(Debug, Copy, Clone, Rand, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Direction {
     Up,
     Down,
@@ -83,6 +82,16 @@ enum Direction {
     Right,
 }
 
+impl Distribution<Direction> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Direction {
+        match rng.gen_range(0, 4) {
+            0 => Direction::Up,
+            1 => Direction::Down,
+            2 => Direction::Left,
+            _ => Direction::Right,
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InstructionPointer {
@@ -129,7 +138,7 @@ pub fn run(mut program: Program) -> u64 {
     loop {
         instruction_count += 1;
 
-//        println!("{:?} : {:?}", program.get(&pointer.position), stack);
+        // println!("{:?} : {:?}", program.get(&pointer.position), stack);
 
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
@@ -141,7 +150,8 @@ pub fn run(mut program: Program) -> u64 {
             '>' => pointer.direction = Direction::Right,
             '<' => pointer.direction = Direction::Left,
             '?' => pointer.direction = rng.gen(),
-            '_' => { // horizontal if
+            '_' => {
+                // horizontal if
                 let top = stack.pop();
                 if top == 0 {
                     pointer.direction = Direction::Right;
@@ -149,7 +159,8 @@ pub fn run(mut program: Program) -> u64 {
                     pointer.direction = Direction::Left;
                 }
             }
-            '|' => { // vertical if
+            // vertical if
+            '|' => {
                 let top = stack.pop();
                 if top == 0 {
                     pointer.direction = Direction::Down;
@@ -157,32 +168,38 @@ pub fn run(mut program: Program) -> u64 {
                     pointer.direction = Direction::Up;
                 }
             }
-            '+' => { // addition
+            // addition
+            '+' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 stack.push(a + b);
             }
-            '-' => { // subtraction
+            // subtraction
+            '-' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 stack.push(b - a);
             }
-            '*' => { // multiplication
+            // multiplication
+            '*' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 stack.push(a * b);
             }
-            '/' => { // division
+            // division
+            '/' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 stack.push(b / a);
             }
-            '%' => { // modulo
+            // modulo
+            '%' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 stack.push(b % a);
             }
-            '!' => { // logical not
+            // logical not
+            '!' => {
                 let b = stack.pop();
                 if b == 0 {
                     stack.push(1);
@@ -190,7 +207,8 @@ pub fn run(mut program: Program) -> u64 {
                     stack.push(0);
                 }
             }
-            '`' => { // greater than
+            // greater than
+            '`' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 if let Ordering::Greater = b.cmp(&a) {
@@ -199,49 +217,69 @@ pub fn run(mut program: Program) -> u64 {
                     stack.push(0);
                 }
             }
-            ':' => { // duplicate top of stack
+            // duplicate top of stack
+            ':' => {
                 let a = stack.pop();
                 stack.push(a);
                 stack.push(a);
             }
-            '\\' => { // swap top of stack
+            // swap top of stack
+            '\\' => {
                 let a = stack.pop();
                 let b = stack.pop();
                 stack.push(a);
                 stack.push(b);
             }
-            '$' => { // discard top of stack
+            // discard top of stack
+            '$' => {
                 stack.pop();
             }
             '.' => print!("{}", stack.pop()),
             ',' => print!("{}", stack.pop() as u8 as char),
             '#' => move_pointer(&mut pointer),
-            'g' => { // get
+            // get
+            'g' => {
                 let y = stack.pop();
                 let x = stack.pop();
-                stack.push(i64::from(program.get(&Position { x: x as usize, y: y as usize }) as u8));
+                stack.push(i64::from(program.get(&Position {
+                    x: x as usize,
+                    y: y as usize,
+                }) as u8));
             }
-            'p' => { // push
+            // push
+            'p' => {
                 let y = stack.pop();
                 let x = stack.pop();
                 let v = stack.pop();
-                program.set(&Position { x: x as usize, y: y as usize }, v as u8 as char);
+                program.set(
+                    &Position {
+                        x: x as usize,
+                        y: y as usize,
+                    },
+                    v as u8 as char,
+                );
             }
-            '&' => { // get int from user
+            // get int from user
+            '&' => {
                 let mut input = String::new();
-                io::stdin().read_line(&mut input).expect("failed to read int");
+                io::stdin()
+                    .read_line(&mut input)
+                    .expect("failed to read int");
                 println!("{}", input);
                 stack.push(input.trim().parse::<i64>().unwrap());
             }
-            '~' => { // get char from user
+            // get char from user
+            '~' => {
                 let mut input = String::new();
-                io::stdin().read_line(&mut input).expect("failed to read char");
+                io::stdin()
+                    .read_line(&mut input)
+                    .expect("failed to read char");
                 stack.push(i64::from(input.chars().next().unwrap() as u8));
             }
             '@' => break,
-            c @ '0'...'9' => stack.push(i64::from(c.to_digit(10).unwrap())),
+            c @ '0'..='9' => stack.push(i64::from(c.to_digit(10).unwrap())),
             ' ' => {}
-            c => { panic!("Unrecognized instruction! {}", c) }
+            c => panic!("Unrecognized instruction! {}", c),
         }
 
         move_pointer(&mut pointer);
@@ -252,41 +290,28 @@ pub fn run(mut program: Program) -> u64 {
 
 fn move_pointer(pointer: &mut InstructionPointer) {
     match pointer.direction {
-        Direction::Up => { pointer.position.y -= 1 }
-        Direction::Down => { pointer.position.y += 1 }
-        Direction::Right => { pointer.position.x += 1 }
-        Direction::Left => { pointer.position.x -= 1 }
+        Direction::Up => pointer.position.y -= 1,
+        Direction::Down => pointer.position.y += 1,
+        Direction::Right => pointer.position.x += 1,
+        Direction::Left => pointer.position.x -= 1,
     }
 }
 
-pub fn benchmark(program: Program) {
+pub fn time(program: Program) {
     let start = PreciseTime::now();
     let instruction_count = run(program);
     let end = PreciseTime::now();
 
     let duration = start.to(end);
     println!("");
-    println!("Executed {:?} instructions in {:?} μs", instruction_count, duration.num_microseconds().unwrap());
+    println!(
+        "Executed {:?} instructions in {:?} μs",
+        instruction_count,
+        duration.num_microseconds().unwrap()
+    );
     let num_seconds = 1.0e-9 * duration.num_nanoseconds().unwrap() as f64;
-    println!("Running at {} instructions/second", ((instruction_count as f64 / num_seconds) as u64).separated_string());
-}
-
-
-#[cfg(test)]
-mod tests {
-    extern crate test;
-
-    use self::test::Bencher;
-
-    use super::*;
-
-    #[bench]
-    fn bench_factorial(b: &mut Bencher) {
-        let program = Program::from_str(
-            &vec![r#"9>:1-:v v *_$.@ "#,
-                  r#" ^    _$>\:^    "#]
-                .join("\n"));
-
-        b.iter(|| run(program.clone()));
-    }
+    println!(
+        "Running at {} instructions/second",
+        ((instruction_count as f64 / num_seconds) as u64).separated_string()
+    );
 }

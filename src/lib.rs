@@ -1,16 +1,16 @@
+extern crate humantime;
 extern crate rand;
 extern crate separator;
-extern crate time;
 
-use std::{cmp::Ordering, fmt, fs::File, io, io::prelude::*};
+use std::{cmp::Ordering, fmt, fs::File, io, io::prelude::*, time::Instant};
 
+use humantime::format_duration;
 use rand::{
     distributions::{Distribution, Standard},
     prelude::*,
     Rng,
 };
 use separator::Separatable;
-use time::PreciseTime;
 
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
@@ -339,20 +339,16 @@ pub fn run(program: Program) -> i64 {
 }
 
 pub fn time(program: Program) {
-    let start = PreciseTime::now();
+    let start = Instant::now();
     let instruction_count = run(program);
-    let end = PreciseTime::now();
+    let duration = start.elapsed();
 
-    let duration = start.to(end);
-    println!("");
-    println!(
-        "Executed {:?} instructions in {:?} μs",
+    let num_seconds = 1.0e-9 * (duration.as_nanos() as f64);
+
+    eprintln!(
+        "Executed {} instructions in {} ({} instructions/second)",
         instruction_count,
-        duration.num_microseconds().unwrap()
-    );
-    let num_seconds = 1.0e-9 * duration.num_nanoseconds().unwrap() as f64;
-    println!(
-        "Running at {} instructions/second",
+        format_duration(duration).to_string(),
         ((instruction_count as f64 / num_seconds) as u64).separated_string()
     );
 }

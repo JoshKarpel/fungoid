@@ -2,6 +2,7 @@ extern crate clap;
 extern crate fungoid;
 
 use clap::{App, Arg};
+use std::io;
 
 fn main() {
     let matches = App::new("fungoid")
@@ -15,7 +16,16 @@ fn main() {
                 .index(1),
         )
         .arg(Arg::with_name("time").long("time").help("enable timing"))
-        .arg(Arg::with_name("show").long("show").help("show program"))
+        .arg(
+            Arg::with_name("show")
+                .long("show")
+                .help("show program before executing"),
+        )
+        .arg(
+            Arg::with_name("step")
+                .long("step")
+                .help("step through program"),
+        )
         .get_matches();
 
     let filename = matches.value_of("FILE").unwrap();
@@ -23,12 +33,19 @@ fn main() {
     let program = fungoid::Program::from_file(&filename);
 
     if matches.is_present("show") {
-        println!("{}", program);
+        program.show();
     }
 
+    let input = &mut io::stdin();
+    let output = &mut io::stdout();
+    let error = &mut io::stderr();
+    let program_state = fungoid::ProgramState::new(program, input, output, error);
+
     if matches.is_present("time") {
-        fungoid::time(program);
+        fungoid::time(program_state);
+    } else if matches.is_present("step") {
+        fungoid::step(program_state);
     } else {
-        fungoid::run(program);
+        fungoid::run_to_termination(program_state);
     }
 }

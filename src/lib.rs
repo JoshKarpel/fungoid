@@ -2,7 +2,7 @@ extern crate humantime;
 extern crate rand;
 extern crate separator;
 
-use std::{cmp::Ordering, fmt, fs::File, io, io::prelude::*, time::Instant};
+use std::{cmp::Ordering, fmt, fs::File, io::prelude::*, time::Instant};
 
 use humantime::format_duration;
 use rand::{
@@ -47,6 +47,10 @@ impl Program {
 
     fn set(&mut self, pos: &Position, c: char) {
         self.0[pos.y][pos.x] = c;
+    }
+
+    pub fn show(&self) {
+        println!("{}", self);
     }
 }
 
@@ -131,6 +135,7 @@ pub struct ProgramState<'input, 'output, 'error> {
     pointer: InstructionPointer,
     stack: Stack,
     rng: ThreadRng,
+    terminated: bool,
     string_mode: bool,
     instruction_count: u64,
     input: &'input mut dyn Read,
@@ -139,7 +144,7 @@ pub struct ProgramState<'input, 'output, 'error> {
 }
 
 impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
-    fn new(
+    pub fn new(
         program: Program,
         input: &'input mut dyn Read,
         output: &'output mut dyn Write,
@@ -150,6 +155,7 @@ impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
             pointer: InstructionPointer::new(),
             stack: Stack::new(),
             rng: rand::thread_rng(),
+            terminated: false,
             string_mode: false,
             instruction_count: 0,
             input,
@@ -159,163 +165,172 @@ impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
     }
 
     fn run(mut self) -> Self {
-        loop {
-            self.instruction_count += 1;
-
-            // println!("{:?} : {:?}", program.get(&pointer.position), self.stack);
-
-            // execute instruction at pointer
-            // https://esolangs.org/wiki/Befunge#Instructions
-            match self.program.get(&self.pointer.position) {
-                '"' => self.string_mode = !self.string_mode,
-                c if self.string_mode => self.stack.push(i64::from(c as u8)),
-                '^' => self.pointer.direction = Direction::Up,
-                'v' => self.pointer.direction = Direction::Down,
-                '>' => self.pointer.direction = Direction::Right,
-                '<' => self.pointer.direction = Direction::Left,
-                '?' => self.pointer.direction = self.rng.gen(),
-                '_' => {
-                    // horizontal if
-                    let top = self.stack.pop();
-                    if top == 0 {
-                        self.pointer.direction = Direction::Right;
-                    } else {
-                        self.pointer.direction = Direction::Left;
-                    }
-                }
-                // vertical if
-                '|' => {
-                    let top = self.stack.pop();
-                    if top == 0 {
-                        self.pointer.direction = Direction::Down;
-                    } else {
-                        self.pointer.direction = Direction::Up;
-                    }
-                }
-                // addition
-                '+' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(a + b);
-                }
-                // subtraction
-                '-' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(b - a);
-                }
-                // multiplication
-                '*' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(a * b);
-                }
-                // division
-                '/' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(b / a);
-                }
-                // modulo
-                '%' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(b % a);
-                }
-                // logical not
-                '!' => {
-                    let b = self.stack.pop();
-                    if b == 0 {
-                        self.stack.push(1);
-                    } else {
-                        self.stack.push(0);
-                    }
-                }
-                // greater than
-                '`' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    if let Ordering::Greater = b.cmp(&a) {
-                        self.stack.push(1)
-                    } else {
-                        self.stack.push(0);
-                    }
-                }
-                // duplicate top of self.stack
-                ':' => {
-                    let a = self.stack.pop();
-                    self.stack.push(a);
-                    self.stack.push(a);
-                }
-                // swap top of self.stack
-                '\\' => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(a);
-                    self.stack.push(b);
-                }
-                // discard top of self.stack
-                '$' => {
-                    self.stack.pop();
-                }
-                '.' => {
-                    write!(self.output, "{}", self.stack.pop()).expect("Failed to write int");
-                    ()
-                }
-                ',' => {
-                    write!(self.output, "{}", self.stack.pop() as u8 as char)
-                        .expect("Failed to write char");
-                    ()
-                }
-                '#' => move_pointer(&mut self.pointer),
-                // get
-                'g' => {
-                    let y = self.stack.pop();
-                    let x = self.stack.pop();
-                    self.stack.push(i64::from(self.program.get(&Position {
-                        x: x as usize,
-                        y: y as usize,
-                    }) as u8));
-                }
-                // push
-                'p' => {
-                    let y = self.stack.pop();
-                    let x = self.stack.pop();
-                    let v = self.stack.pop();
-                    self.program.set(
-                        &Position {
-                            x: x as usize,
-                            y: y as usize,
-                        },
-                        v as u8 as char,
-                    );
-                }
-                // get int from user
-                '&' => {
-                    let mut input = String::new();
-                    self.input
-                        .read_to_string(&mut input)
-                        .expect("failed to read int");
-                    self.stack.push(input.trim().parse::<i64>().unwrap());
-                }
-                // get char from user
-                '~' => {
-                    let mut input = String::new();
-                    self.input
-                        .read_to_string(&mut input)
-                        .expect("failed to read char");
-                    self.stack
-                        .push(i64::from(input.chars().next().unwrap() as u8));
-                }
-                '@' => break,
-                c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
-                ' ' => {}
-                c => panic!("Unrecognized instruction! {}", c),
-            }
-
-            move_pointer(&mut self.pointer);
+        while !self.terminated {
+            self = self.step();
         }
 
+        self
+    }
+
+    fn step(mut self) -> Self {
+        // println!("{:?} : {:?}", program.get(&pointer.position), self.stack);
+
+        // execute instruction at pointer
+        // https://esolangs.org/wiki/Befunge#Instructions
+        match self.program.get(&self.pointer.position) {
+            '"' => self.string_mode = !self.string_mode,
+            c if self.string_mode => self.stack.push(i64::from(c as u8)),
+            '^' => self.pointer.direction = Direction::Up,
+            'v' => self.pointer.direction = Direction::Down,
+            '>' => self.pointer.direction = Direction::Right,
+            '<' => self.pointer.direction = Direction::Left,
+            '?' => self.pointer.direction = self.rng.gen(),
+            '_' => {
+                // horizontal if
+                let top = self.stack.pop();
+                if top == 0 {
+                    self.pointer.direction = Direction::Right;
+                } else {
+                    self.pointer.direction = Direction::Left;
+                }
+            }
+            // vertical if
+            '|' => {
+                let top = self.stack.pop();
+                if top == 0 {
+                    self.pointer.direction = Direction::Down;
+                } else {
+                    self.pointer.direction = Direction::Up;
+                }
+            }
+            // addition
+            '+' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                self.stack.push(a + b);
+            }
+            // subtraction
+            '-' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                self.stack.push(b - a);
+            }
+            // multiplication
+            '*' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                self.stack.push(a * b);
+            }
+            // division
+            '/' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                self.stack.push(b / a);
+            }
+            // modulo
+            '%' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                self.stack.push(b % a);
+            }
+            // logical not
+            '!' => {
+                let b = self.stack.pop();
+                if b == 0 {
+                    self.stack.push(1);
+                } else {
+                    self.stack.push(0);
+                }
+            }
+            // greater than
+            '`' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                if let Ordering::Greater = b.cmp(&a) {
+                    self.stack.push(1)
+                } else {
+                    self.stack.push(0);
+                }
+            }
+            // duplicate top of self.stack
+            ':' => {
+                let a = self.stack.pop();
+                self.stack.push(a);
+                self.stack.push(a);
+            }
+            // swap top of self.stack
+            '\\' => {
+                let a = self.stack.pop();
+                let b = self.stack.pop();
+                self.stack.push(a);
+                self.stack.push(b);
+            }
+            // discard top of self.stack
+            '$' => {
+                self.stack.pop();
+            }
+            '.' => {
+                write!(self.output, "{}", self.stack.pop()).expect("Failed to write int");
+                ()
+            }
+            ',' => {
+                write!(self.output, "{}", self.stack.pop() as u8 as char)
+                    .expect("Failed to write char");
+                ()
+            }
+            '#' => move_pointer(&mut self.pointer),
+            // get
+            'g' => {
+                let y = self.stack.pop();
+                let x = self.stack.pop();
+                self.stack.push(i64::from(self.program.get(&Position {
+                    x: x as usize,
+                    y: y as usize,
+                }) as u8));
+            }
+            // push
+            'p' => {
+                let y = self.stack.pop();
+                let x = self.stack.pop();
+                let v = self.stack.pop();
+                self.program.set(
+                    &Position {
+                        x: x as usize,
+                        y: y as usize,
+                    },
+                    v as u8 as char,
+                );
+            }
+            // get int from user
+            '&' => {
+                let mut input = String::new();
+                self.input
+                    .read_to_string(&mut input)
+                    .expect("failed to read int");
+                self.stack.push(input.trim().parse::<i64>().unwrap());
+            }
+            // get char from user
+            '~' => {
+                let mut input = String::new();
+                self.input
+                    .read_to_string(&mut input)
+                    .expect("failed to read char");
+                self.stack
+                    .push(i64::from(input.chars().next().unwrap() as u8));
+            }
+            '@' => {
+                self.terminated = true;
+                self.instruction_count += 1;
+                return self;
+            }
+            c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
+            ' ' => {}
+            c => panic!("Unrecognized instruction! {}", c),
+        }
+
+        move_pointer(&mut self.pointer);
+
+        self.instruction_count += 1;
         self
     }
 }
@@ -329,19 +344,13 @@ fn move_pointer(pointer: &mut InstructionPointer) {
     }
 }
 
-pub fn run(program: Program) -> u64 {
-    ProgramState::new(
-        program,
-        &mut io::stdin(),
-        &mut io::stdout(),
-        &mut io::stderr(),
-    )
-        .run().instruction_count
+pub fn run_to_termination(program_state: ProgramState) -> u64 {
+    program_state.run().instruction_count
 }
 
-pub fn time(program: Program) {
+pub fn time(program_state: ProgramState) {
     let start = Instant::now();
-    let instruction_count = run(program);
+    let instruction_count = run_to_termination(program_state);
     let duration = start.elapsed();
 
     let num_seconds = 1.0e-9 * (duration.as_nanos() as f64);
@@ -354,6 +363,13 @@ pub fn time(program: Program) {
     );
 }
 
+pub fn step(mut program_state: ProgramState) {
+    while !program_state.terminated {
+        program_state = program_state.step();
+        program_state.program.show()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Program, ProgramState};
@@ -363,9 +379,9 @@ mod tests {
     #[test]
     fn hello_world() {
         let program = Program::from_str(
-r#">25*"!dlrow ,olleH":v "
+            r#">25*"!dlrow ,olleH":v "
   "                 v:,_@"
-  "                 >  ^ "#
+  "                 >  ^ "#,
         );
         println!("{}", program);
         let mut output = Vec::new();

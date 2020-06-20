@@ -1,9 +1,24 @@
+extern crate crossterm;
 extern crate humantime;
 extern crate rand;
 extern crate separator;
 
-use std::{cmp::Ordering, fmt, fs::File, io::prelude::*, time::Instant};
+use std::{
+    cmp::Ordering,
+    fmt,
+    fs::File,
+    io::{self, prelude::*},
+    time::Duration,
+    time::Instant,
+};
 
+use crossterm::{
+    cursor,
+    event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
+    style::{self, Colorize},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand, QueueableCommand, Result,
+};
 use humantime::format_duration;
 use rand::{
     distributions::{Distribution, Standard},
@@ -49,8 +64,29 @@ impl Program {
         self.0[pos.y][pos.x] = c;
     }
 
+    pub fn str(&self) -> String {
+        format!("{}", self)
+    }
+
     pub fn show(&self) {
         println!("{}", self);
+    }
+
+    pub fn draw(&self, mut stdout: &mut dyn Write) -> Result<()> {
+        let bar = vec!["─"; 80].join("");
+        let q = stdout
+            .queue(cursor::MoveTo(0, 0))?
+            .queue(style::PrintStyledContent(format!("┌{}┐", bar).white()))?;
+        for line in &self.0 {
+            q.queue(cursor::MoveToNextLine(1))?
+                .queue(style::PrintStyledContent(
+                    format!("│{}│", line.iter().collect::<String>()).white(),
+                ))?;
+        }
+        q.queue(cursor::MoveToNextLine(1))?
+            .queue(style::PrintStyledContent(format!("└{}┘", bar).white()))?;
+        stdout.flush()?;
+        Ok(())
     }
 }
 
@@ -363,10 +399,84 @@ pub fn time(program_state: ProgramState) {
     );
 }
 
-pub fn step(mut program_state: ProgramState) {
+pub fn step(program: Program, delay: Duration) -> Result<()> {
+    let mut stdout = io::stdout();
+    let mut stdin = io::stdin();
+    let mut stderr = io::stderr();
+
+    let mut streams = StepStreams::new(&mut stdin, &mut stdout, &mut stderr);
+
+    let mut input = io::stdin();
+    let mut output = Vec::new();
+    let mut error = Vec::new();
+    let mut program_state = ProgramState::new(program, &mut input, &mut output, &mut error);
+
+    streams.output.execute(EnterAlternateScreen)?;
+
+    enable_raw_mode()?;
+
+    program.draw(&mut streams.output)?;
+
     while !program_state.terminated {
+        streams
+            .output
+            .queue(cursor::MoveTo(
+                (program_state.pointer.position.x + 1) as u16,
+                (program_state.pointer.position.y + 1) as u16,
+            ))?
+            .queue(style::PrintStyledContent(
+                program.get(&program_state.pointer.position).white(),
+            ))?;
+
         program_state = program_state.step();
-        program_state.program.show()
+
+        streams
+            .output
+            .queue(cursor::MoveTo(
+                (program_state.pointer.position.x + 1) as u16,
+                (program_state.pointer.position.y + 1) as u16,
+            ))?
+            .queue(style::PrintStyledContent(
+                program.get(&program_state.pointer.position).red(),
+            ))?;
+
+        streams.output.flush()?;
+
+        if poll(delay)? {
+            match read()? {
+                Event::Key(KeyEvent {
+                    modifiers: KeyModifiers::CONTROL,
+                    code: KeyCode::Char('c'),
+                }) => break,
+                _ => {}
+            }
+        }
+    }
+
+    streams.output.execute(LeaveAlternateScreen)?;
+
+    disable_raw_mode()?;
+
+    Ok(())
+}
+
+pub struct StepStreams<'input, 'output, 'error> {
+    input: &'input mut dyn Read,
+    output: &'output mut dyn Write,
+    error: &'error mut dyn Write,
+}
+
+impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
+    fn new(
+        input: &'input mut dyn Read,
+        output: &'output mut dyn Write,
+        error: &'error mut dyn Write,
+    ) -> Self {
+        StepStreams {
+            input,
+            output,
+            error,
+        }
     }
 }
 
@@ -376,17 +486,15 @@ mod tests {
 
     use std::io;
 
+    const HELLO_WORLD: &'static str = r#"64+"!dlroW ,olleH">:#,_@"#;
+
     #[test]
     fn hello_world() {
-        let program = Program::from_str(
-            r#">25*"!dlrow ,olleH":v "
-  "                 v:,_@"
-  "                 >  ^ "#,
-        );
+        let program = Program::from_str(HELLO_WORLD);
         println!("{}", program);
         let mut output = Vec::new();
         ProgramState::new(program, &mut io::stdin(), &mut output, &mut Vec::new()).run();
         println!("{:?}", output);
-        assert_eq!("Hello, world!\n", String::from_utf8(output).unwrap());
+        assert_eq!("Hello, World!\n", String::from_utf8(output).unwrap());
     }
 }

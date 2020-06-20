@@ -3,6 +3,7 @@ extern crate fungoid;
 
 use clap::{App, Arg};
 use std::io;
+use std::time::Duration;
 
 fn main() {
     let matches = App::new("fungoid")
@@ -24,6 +25,8 @@ fn main() {
         .arg(
             Arg::with_name("step")
                 .long("step")
+                .takes_value(true)
+                .default_value("10")
                 .help("step through program"),
         )
         .get_matches();
@@ -32,20 +35,24 @@ fn main() {
 
     let program = fungoid::Program::from_file(&filename);
 
-    if matches.is_present("show") {
-        program.show();
-    }
-
-    let input = &mut io::stdin();
-    let output = &mut io::stdout();
-    let error = &mut io::stderr();
-    let program_state = fungoid::ProgramState::new(program, input, output, error);
-
-    if matches.is_present("time") {
-        fungoid::time(program_state);
-    } else if matches.is_present("step") {
-        fungoid::step(program_state);
+    if matches.is_present("step") {
+        let max_ips: u32 = matches.value_of("step").unwrap().parse().unwrap();
+        let dur = Duration::from_secs_f64(1.0 / (max_ips as f64));
+        fungoid::step(program, dur).unwrap();
     } else {
-        fungoid::run_to_termination(program_state);
+        if matches.is_present("show") {
+            program.show();
+        }
+
+        let input = &mut io::stdin();
+        let output = &mut io::stdout();
+        let error = &mut io::stderr();
+        let program_state = fungoid::ProgramState::new(program, input, output, error);
+
+        if matches.is_present("time") {
+            fungoid::time(program_state);
+        } else {
+            fungoid::run_to_termination(program_state);
+        }
     }
 }

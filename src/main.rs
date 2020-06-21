@@ -62,8 +62,7 @@ fn main() {
 
         let input = &mut io::stdin();
         let output = &mut io::stdout();
-        let error = &mut io::stderr();
-        let program_state = fungoid::ProgramState::new(program, input, output, error);
+        let program_state = fungoid::ProgramState::new(program, input, output);
 
         if matches.is_present("time") {
             fungoid::time(program_state);

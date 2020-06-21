@@ -27,8 +27,6 @@ use rand::{
     Rng,
 };
 use separator::Separatable;
-use std::ops::Deref;
-use std::rc::Rc;
 
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
@@ -169,7 +167,7 @@ impl Stack {
     }
 }
 
-pub struct ProgramState<'input, 'output, 'error, O: Write> {
+pub struct ProgramState<'input, 'output, O: Write> {
     program: Program,
     pointer: InstructionPointer,
     stack: Stack,
@@ -179,16 +177,10 @@ pub struct ProgramState<'input, 'output, 'error, O: Write> {
     instruction_count: u64,
     input: &'input mut dyn Read,
     output: &'output mut O,
-    error: &'error mut dyn Write,
 }
 
-impl<'input, 'output, 'error, O: Write> ProgramState<'input, 'output, 'error, O> {
-    pub fn new(
-        program: Program,
-        input: &'input mut dyn Read,
-        output: &'output mut O,
-        error: &'error mut dyn Write,
-    ) -> Self {
+impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
+    pub fn new(program: Program, input: &'input mut dyn Read, output: &'output mut O) -> Self {
         ProgramState {
             program,
             pointer: InstructionPointer::new(),
@@ -199,7 +191,6 @@ impl<'input, 'output, 'error, O: Write> ProgramState<'input, 'output, 'error, O>
             instruction_count: 0,
             input,
             output,
-            error,
         }
     }
 
@@ -374,7 +365,7 @@ impl<'input, 'output, 'error, O: Write> ProgramState<'input, 'output, 'error, O>
     }
 }
 
-impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error, Vec<u8>> {
+impl<'input, 'output> ProgramState<'input, 'output, Vec<u8>> {
     fn pop_output(&mut self) -> Option<u8> {
         self.output.pop()
     }
@@ -413,15 +404,11 @@ pub fn step(program: Program, delay: Duration) -> Result<()> {
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
     let mut streams = StepStreams::new(&mut stdin, &mut stdout, &mut stderr);
+    streams.init()?;
 
     let mut input = io::stdin();
     let mut output = Vec::new();
-    let mut error = Vec::new();
-    let mut program_state = ProgramState::new(program, &mut input, &mut output, &mut error);
-
-    streams.output.execute(EnterAlternateScreen)?;
-
-    enable_raw_mode()?;
+    let mut program_state = ProgramState::new(program, &mut input, &mut output);
 
     program.draw(&mut streams.output)?;
 
@@ -431,9 +418,7 @@ pub fn step(program: Program, delay: Duration) -> Result<()> {
         .execute(SavePosition)?;
 
     let mut output_width: u16 = 0;
-    let (terminal_width, terminal_rows) = crossterm::terminal::size().unwrap_or((80, 30));
-
-    let mut breaking = false;
+    let (terminal_width, _terminal_rows) = crossterm::terminal::size().unwrap_or((80, 30));
 
     while !program_state.terminated {
         streams
@@ -494,42 +479,31 @@ pub fn step(program: Program, delay: Duration) -> Result<()> {
                 Event::Key(KeyEvent {
                     modifiers: KeyModifiers::CONTROL,
                     code: KeyCode::Char('c'),
-                }) => {
-                    breaking = true;
-                    break;
-                }
+                }) => return Ok(()),
                 _ => {}
             }
         }
     }
 
-    if !breaking {
-        streams
-            .output
-            .queue(cursor::MoveTo(
-                (program_state.pointer.position.x + 1) as u16,
-                (program_state.pointer.position.y + 1) as u16,
-            ))?
-            .execute(style::PrintStyledContent(
-                program.get(&program_state.pointer.position).red(),
-            ))?;
+    streams
+        .output
+        .queue(cursor::MoveTo(
+            (program_state.pointer.position.x + 1) as u16,
+            (program_state.pointer.position.y + 1) as u16,
+        ))?
+        .execute(style::PrintStyledContent(
+            program.get(&program_state.pointer.position).red(),
+        ))?;
 
-        loop {
-            match read()? {
-                Event::Key(KeyEvent {
-                    modifiers: KeyModifiers::CONTROL,
-                    code: KeyCode::Char('c'),
-                }) => break,
-                _ => {}
-            }
+    loop {
+        match read()? {
+            Event::Key(KeyEvent {
+                modifiers: KeyModifiers::CONTROL,
+                code: KeyCode::Char('c'),
+            }) => return Ok(()),
+            _ => {}
         }
     }
-
-    streams.output.execute(LeaveAlternateScreen)?;
-
-    disable_raw_mode()?;
-
-    Ok(())
 }
 
 pub struct StepStreams<'input, 'output, 'error> {
@@ -550,6 +524,20 @@ impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
             error,
         }
     }
+
+    fn init(&mut self) -> Result<()> {
+        self.output.execute(EnterAlternateScreen)?;
+        enable_raw_mode()?;
+        Ok(())
+    }
+}
+
+impl<'input, 'output, 'error> Drop for StepStreams<'input, 'output, 'error> {
+    fn drop(&mut self) {
+        self.output.execute(LeaveAlternateScreen).unwrap();
+        disable_raw_mode().unwrap();
+        ()
+    }
 }
 
 #[cfg(test)]
@@ -565,8 +553,27 @@ mod tests {
         let program = Program::from_str(HELLO_WORLD);
         println!("{}", program);
         let mut output = Vec::new();
-        ProgramState::new(program, &mut io::stdin(), &mut output, &mut Vec::new()).run();
+        ProgramState::new(program, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
         assert_eq!("Hello, World!\n", String::from_utf8(output).unwrap());
+    }
+
+    const SIEVE_OF_ERATOSTHENES: &'static str = r#"2>:3g" "-!v\  g30          <
+ |!`"O":+1_:.:03p>03g+:"O"`|
+ @               ^  p3\" ":<
+2 234567890123456789012345678901234567890123456789012345678901234567890123456789
+"#;
+
+    #[test]
+    fn sieve_of_eratosthenes() {
+        let program = Program::from_str(SIEVE_OF_ERATOSTHENES);
+        println!("{}", program);
+        let mut output = Vec::new();
+        ProgramState::new(program, &mut io::stdin(), &mut output).run();
+        println!("{:?}", output);
+        assert_eq!(
+            "2357111317192329313741434753596167717379",
+            String::from_utf8(output).unwrap()
+        );
     }
 }

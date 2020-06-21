@@ -12,6 +12,7 @@ use std::{
     time::Instant,
 };
 
+use crossterm::cursor::{MoveToNextLine, RestorePosition, SavePosition};
 use crossterm::{
     cursor,
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -26,6 +27,8 @@ use rand::{
     Rng,
 };
 use separator::Separatable;
+use std::ops::Deref;
+use std::rc::Rc;
 
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
@@ -166,7 +169,7 @@ impl Stack {
     }
 }
 
-pub struct ProgramState<'input, 'output, 'error> {
+pub struct ProgramState<'input, 'output, 'error, O: Write> {
     program: Program,
     pointer: InstructionPointer,
     stack: Stack,
@@ -175,15 +178,15 @@ pub struct ProgramState<'input, 'output, 'error> {
     string_mode: bool,
     instruction_count: u64,
     input: &'input mut dyn Read,
-    output: &'output mut dyn Write,
+    output: &'output mut O,
     error: &'error mut dyn Write,
 }
 
-impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
+impl<'input, 'output, 'error, O: Write> ProgramState<'input, 'output, 'error, O> {
     pub fn new(
         program: Program,
         input: &'input mut dyn Read,
-        output: &'output mut dyn Write,
+        output: &'output mut O,
         error: &'error mut dyn Write,
     ) -> Self {
         ProgramState {
@@ -371,6 +374,12 @@ impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error> {
     }
 }
 
+impl<'input, 'output, 'error> ProgramState<'input, 'output, 'error, Vec<u8>> {
+    fn pop_output(&mut self) -> Option<u8> {
+        self.output.pop()
+    }
+}
+
 fn move_pointer(pointer: &mut InstructionPointer) {
     match pointer.direction {
         Direction::Up => pointer.position.y -= 1,
@@ -380,11 +389,11 @@ fn move_pointer(pointer: &mut InstructionPointer) {
     }
 }
 
-pub fn run_to_termination(program_state: ProgramState) -> u64 {
+pub fn run_to_termination<O: Write>(program_state: ProgramState<O>) -> u64 {
     program_state.run().instruction_count
 }
 
-pub fn time(program_state: ProgramState) {
+pub fn time<O: Write>(program_state: ProgramState<O>) {
     let start = Instant::now();
     let instruction_count = run_to_termination(program_state);
     let duration = start.elapsed();
@@ -400,10 +409,9 @@ pub fn time(program_state: ProgramState) {
 }
 
 pub fn step(program: Program, delay: Duration) -> Result<()> {
-    let mut stdout = io::stdout();
     let mut stdin = io::stdin();
+    let mut stdout = io::stdout();
     let mut stderr = io::stderr();
-
     let mut streams = StepStreams::new(&mut stdin, &mut stdout, &mut stderr);
 
     let mut input = io::stdin();
@@ -416,6 +424,16 @@ pub fn step(program: Program, delay: Duration) -> Result<()> {
     enable_raw_mode()?;
 
     program.draw(&mut streams.output)?;
+
+    streams
+        .output
+        .queue(MoveToNextLine(2))?
+        .execute(SavePosition)?;
+
+    let mut output_width: u16 = 0;
+    let (terminal_width, terminal_rows) = crossterm::terminal::size().unwrap_or((80, 30));
+
+    let mut breaking = false;
 
     while !program_state.terminated {
         streams
@@ -437,12 +455,66 @@ pub fn step(program: Program, delay: Duration) -> Result<()> {
                 (program_state.pointer.position.y + 1) as u16,
             ))?
             .queue(style::PrintStyledContent(
-                program.get(&program_state.pointer.position).red(),
+                program.get(&program_state.pointer.position).green(),
             ))?;
+
+        if let Some(c) = program_state.pop_output() {
+            output_width += 1;
+            match c {
+                // newline
+                _ if output_width > terminal_width - 2 => {
+                    output_width = 0;
+                    streams
+                        .output
+                        .queue(RestorePosition)?
+                        .queue(style::PrintStyledContent("⏎".green()))?
+                        .queue(MoveToNextLine(1))?
+                        .queue(SavePosition)?
+                }
+                10 => {
+                    output_width = 0;
+                    streams
+                        .output
+                        .queue(RestorePosition)?
+                        .queue(MoveToNextLine(1))?
+                        .queue(SavePosition)?
+                }
+                _ => streams
+                    .output
+                    .queue(RestorePosition)?
+                    .queue(style::PrintStyledContent((c as char).white()))?
+                    .queue(SavePosition)?,
+            };
+        };
 
         streams.output.flush()?;
 
         if poll(delay)? {
+            match read()? {
+                Event::Key(KeyEvent {
+                    modifiers: KeyModifiers::CONTROL,
+                    code: KeyCode::Char('c'),
+                }) => {
+                    breaking = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !breaking {
+        streams
+            .output
+            .queue(cursor::MoveTo(
+                (program_state.pointer.position.x + 1) as u16,
+                (program_state.pointer.position.y + 1) as u16,
+            ))?
+            .execute(style::PrintStyledContent(
+                program.get(&program_state.pointer.position).red(),
+            ))?;
+
+        loop {
             match read()? {
                 Event::Key(KeyEvent {
                     modifiers: KeyModifiers::CONTROL,

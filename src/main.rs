@@ -46,7 +46,10 @@ fn main() {
         let program = fungoid::Program::from_file(&filename);
 
         let max_ips: u32 = matches.value_of("rate").unwrap().parse().unwrap();
-        let dur = Duration::from_secs_f64(1.0 / (max_ips as f64));
+        let dur = Duration::from_secs_f64(match max_ips {
+            0 => 0.0,
+            _ => 1.0 / (max_ips as f64),
+        });
 
         fungoid::step(program, dur).unwrap();
     } else if let Some(matches) = matches.subcommand_matches("run") {

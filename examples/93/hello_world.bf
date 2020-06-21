@@ -1,3 +1,1 @@
- >25*"!dlrow ,olleH":v
-                  v:,_@
-                  >  ^
+64+"!dlroW ,olleH">:#,_@

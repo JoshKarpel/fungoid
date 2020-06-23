@@ -165,6 +165,15 @@ impl Stack {
     fn pop(&mut self) -> i64 {
         self.0.pop().unwrap_or(0)
     }
+
+    fn join(&self, sep: &str) -> String {
+        return self
+            .0
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(sep);
+    }
 }
 
 pub struct ProgramState<'input, 'output, O: Write> {
@@ -202,8 +211,17 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         self
     }
 
+    fn debug(&self) {
+        eprintln!(
+            "{:?} | {:?} | {}",
+            self.pointer.position,
+            self.program.get(&self.pointer.position),
+            self.stack.join(" ")
+        );
+    }
+
     fn step(mut self) -> Self {
-        // println!("{:?} : {:?}", program.get(&pointer.position), self.stack);
+        // self.debug();
 
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
@@ -573,6 +591,21 @@ mod tests {
         println!("{:?}", output);
         assert_eq!(
             "2357111317192329313741434753596167717379",
+            String::from_utf8(output).unwrap()
+        );
+    }
+
+    const QUINE: &'static str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
+
+    #[test]
+    fn quine() {
+        let program = Program::from_str(QUINE);
+        println!("{}", program);
+        let mut output = Vec::new();
+        ProgramState::new(program, &mut io::stdin(), &mut output).run();
+        println!("{:?}", output);
+        assert_eq!(
+            "01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@",
             String::from_utf8(output).unwrap()
         );
     }

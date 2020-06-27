@@ -1,3 +1,4 @@
+extern crate chrono;
 extern crate crossterm;
 extern crate humantime;
 extern crate rand;
@@ -18,7 +19,7 @@ use crossterm::{
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
     style::{self, Colorize},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand, QueueableCommand, Result,
+    ExecutableCommand, QueueableCommand,
 };
 use humantime::format_duration;
 use rand::{
@@ -32,11 +33,11 @@ use separator::Separatable;
 pub struct Program([[char; 80]; 30]);
 
 impl Program {
-    fn new() -> Program {
+    fn new() -> Self {
         Program([[' '; 80]; 30])
     }
 
-    pub fn from_str(s: &str) -> Program {
+    pub fn from_str(s: &str) -> Self {
         let mut program = Program::new();
 
         for (y, line) in s.split('\n').enumerate() {
@@ -48,13 +49,12 @@ impl Program {
         program
     }
 
-    pub fn from_file(path: &str) -> Program {
-        let mut f = File::open(path).expect("file not found");
+    pub fn from_file(path: &str) -> Result<Self, std::io::Error> {
+        let mut f = File::open(path)?;
         let mut contents = String::new();
-        f.read_to_string(&mut contents)
-            .expect("failed to read file");
+        f.read_to_string(&mut contents)?;
 
-        Program::from_str(&contents)
+        Ok(Program::from_str(&contents))
     }
 
     fn get(&self, pos: &Position) -> char {
@@ -73,7 +73,7 @@ impl Program {
         println!("{}", self);
     }
 
-    pub fn draw(&self, mut stdout: &mut dyn Write) -> Result<()> {
+    pub fn draw(&self, mut stdout: &mut dyn Write) -> crossterm::Result<()> {
         let bar = vec!["─"; 80].join("");
         let q = stdout
             .queue(cursor::MoveTo(0, 0))?
@@ -183,13 +183,19 @@ pub struct ProgramState<'input, 'output, O: Write> {
     rng: ThreadRng,
     terminated: bool,
     string_mode: bool,
+    trace: bool,
     instruction_count: u64,
     input: &'input mut dyn Read,
     output: &'output mut O,
 }
 
 impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
-    pub fn new(program: Program, input: &'input mut dyn Read, output: &'output mut O) -> Self {
+    pub fn new(
+        program: Program,
+        trace: bool,
+        input: &'input mut dyn Read,
+        output: &'output mut O,
+    ) -> Self {
         ProgramState {
             program,
             pointer: InstructionPointer::new(),
@@ -197,6 +203,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             rng: rand::thread_rng(),
             terminated: false,
             string_mode: false,
+            trace,
             instruction_count: 0,
             input,
             output,
@@ -211,17 +218,22 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         self
     }
 
-    fn debug(&self) {
+    fn trace(&self) {
         eprintln!(
-            "{:?} | {:?} | {}",
-            self.pointer.position,
+            "{} [{:4}] ({:2}, {:2}) -> {} | {}",
+            chrono::Local::now().format("%F %T%.6f"),
+            self.instruction_count,
+            self.pointer.position.x,
+            self.pointer.position.y,
             self.program.get(&self.pointer.position),
             self.stack.join(" ")
         );
     }
 
     fn step(mut self) -> Self {
-        // self.debug();
+        if self.trace {
+            self.trace();
+        }
 
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
@@ -417,7 +429,7 @@ pub fn time<O: Write>(program_state: ProgramState<O>) {
     );
 }
 
-pub fn step(program: Program, delay: Duration) -> Result<()> {
+pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
     let mut stdin = io::stdin();
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
@@ -426,7 +438,7 @@ pub fn step(program: Program, delay: Duration) -> Result<()> {
 
     let mut input = io::stdin();
     let mut output = Vec::new();
-    let mut program_state = ProgramState::new(program, &mut input, &mut output);
+    let mut program_state = ProgramState::new(program, false, &mut input, &mut output);
 
     program.draw(&mut streams.output)?;
 
@@ -543,7 +555,7 @@ impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
         }
     }
 
-    fn init(&mut self) -> Result<()> {
+    fn init(&mut self) -> crossterm::Result<()> {
         self.output.execute(EnterAlternateScreen)?;
         enable_raw_mode()?;
         Ok(())
@@ -571,7 +583,7 @@ mod tests {
         let program = Program::from_str(HELLO_WORLD);
         println!("{}", program);
         let mut output = Vec::new();
-        ProgramState::new(program, &mut io::stdin(), &mut output).run();
+        ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
         assert_eq!("Hello, World!\n", String::from_utf8(output).unwrap());
     }
@@ -587,7 +599,7 @@ mod tests {
         let program = Program::from_str(SIEVE_OF_ERATOSTHENES);
         println!("{}", program);
         let mut output = Vec::new();
-        ProgramState::new(program, &mut io::stdin(), &mut output).run();
+        ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
         assert_eq!(
             "2357111317192329313741434753596167717379",
@@ -602,7 +614,7 @@ mod tests {
         let program = Program::from_str(QUINE);
         println!("{}", program);
         let mut output = Vec::new();
-        ProgramState::new(program, &mut io::stdin(), &mut output).run();
+        ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
         assert_eq!(
             "01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@",

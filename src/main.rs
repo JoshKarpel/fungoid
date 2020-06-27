@@ -1,11 +1,20 @@
 extern crate clap;
 extern crate fungoid;
 
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg, ArgMatches, SubCommand};
 use std::io;
 use std::time::Duration;
 
 fn main() {
+    if let Err(e) = _main() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+type MainError = Result<(), Box<dyn std::error::Error>>;
+
+fn _main() -> MainError {
     let matches = App::new("fungoid")
         .version("0.1.0")
         .author("Josh Karpel <josh.karpel@gmail.com>")
@@ -17,6 +26,11 @@ fn main() {
                     Arg::with_name("show")
                         .long("show")
                         .help("show program before executing"),
+                )
+                .arg(
+                    Arg::with_name("trace")
+                        .long("trace")
+                        .help("trace program execution"),
                 )
                 .arg(
                     Arg::with_name("FILE")
@@ -42,32 +56,45 @@ fn main() {
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("step") {
-        let filename = matches.value_of("FILE").unwrap();
-        let program = fungoid::Program::from_file(&filename);
-
-        let max_ips: u32 = matches.value_of("rate").unwrap().parse().unwrap();
-        let dur = Duration::from_secs_f64(match max_ips {
-            0 => 0.0,
-            _ => 1.0 / (max_ips as f64),
-        });
-
-        fungoid::step(program, dur).unwrap();
+        step(matches)?;
     } else if let Some(matches) = matches.subcommand_matches("run") {
-        let filename = matches.value_of("FILE").unwrap();
-        let program = fungoid::Program::from_file(&filename);
-
-        if matches.is_present("show") {
-            program.show();
-        }
-
-        let input = &mut io::stdin();
-        let output = &mut io::stdout();
-        let program_state = fungoid::ProgramState::new(program, input, output);
-
-        if matches.is_present("time") {
-            fungoid::time(program_state);
-        } else {
-            fungoid::run_to_termination(program_state);
-        }
+        run(matches)?;
     }
+
+    Ok(())
+}
+
+fn step(matches: &ArgMatches) -> MainError {
+    let program = fungoid::Program::from_file(&matches.value_of("FILE").unwrap())?;
+
+    let max_ips: u32 = matches.value_of("rate").unwrap().parse()?;
+    let dur = Duration::from_secs_f64(match max_ips {
+        0 => 0.0,
+        _ => 1.0 / (max_ips as f64),
+    });
+
+    fungoid::step(program, dur)?;
+
+    Ok(())
+}
+
+fn run(matches: &ArgMatches) -> MainError {
+    let program = fungoid::Program::from_file(&matches.value_of("FILE").unwrap())?;
+
+    if matches.is_present("show") {
+        program.show();
+    }
+
+    let input = &mut io::stdin();
+    let output = &mut io::stdout();
+    let program_state =
+        fungoid::ProgramState::new(program, matches.is_present("trace"), input, output);
+
+    if matches.is_present("time") {
+        fungoid::time(program_state);
+    } else {
+        fungoid::run_to_termination(program_state);
+    }
+
+    Ok(())
 }

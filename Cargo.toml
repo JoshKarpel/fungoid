@@ -5,9 +5,9 @@ authors = ["Josh Karpel <josh.karpel@gmail.com>"]
 edition = '2018'
 
 [dependencies]
+chrono = "0.4.11"
 clap = "2.31.2"
+crossterm = "0.18.2"
+humantime = "2.0.1"
 rand = "0.7.3"
 separator = "0.4.1"
-humantime = "2.0.1"
-crossterm = "0.17.5"
-chrono = "0.4.11"

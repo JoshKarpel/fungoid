@@ -575,7 +575,6 @@ impl<'input, 'output, 'error> Drop for StepStreams<'input, 'output, 'error> {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Display;
     use std::io;
     use std::str::FromStr;
 
@@ -584,13 +583,15 @@ mod tests {
     const HELLO_WORLD: &'static str = r#"64+"!dlroW ,olleH">:#,_@"#;
 
     #[test]
-    fn hello_world() {
+    fn hello_world() -> Result<(), io::Error> {
         let program = Program::from_str(HELLO_WORLD)?;
         println!("{}", program);
         let mut output = Vec::new();
         ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
         assert_eq!("Hello, World!\n", String::from_utf8(output).unwrap());
+
+        Ok(())
     }
 
     const SIEVE_OF_ERATOSTHENES: &'static str = r#"2>:3g" "-!v\  g30          <
@@ -600,7 +601,7 @@ mod tests {
 "#;
 
     #[test]
-    fn sieve_of_eratosthenes() {
+    fn sieve_of_eratosthenes() -> Result<(), io::Error> {
         let program = Program::from_str(SIEVE_OF_ERATOSTHENES)?;
         println!("{}", program);
         let mut output = Vec::new();
@@ -610,12 +611,14 @@ mod tests {
             "2357111317192329313741434753596167717379",
             String::from_utf8(output).unwrap()
         );
+
+        Ok(())
     }
 
     const QUINE: &'static str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
 
     #[test]
-    fn quine() {
+    fn quine() -> Result<(), io::Error> {
         let program = Program::from_str(QUINE)?;
         println!("{}", program);
         let mut output = Vec::new();
@@ -625,5 +628,7 @@ mod tests {
             "01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@",
             String::from_utf8(output).unwrap()
         );
+
+        Ok(())
     }
 }

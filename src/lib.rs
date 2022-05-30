@@ -1,9 +1,3 @@
-extern crate chrono;
-extern crate crossterm;
-extern crate humantime;
-extern crate rand;
-extern crate separator;
-
 use std::str::FromStr;
 use std::{
     cmp::Ordering,
@@ -14,12 +8,12 @@ use std::{
     time::Instant,
 };
 
-use crossterm::cursor::{MoveToNextLine, RestorePosition, SavePosition};
-use crossterm::style::Stylize;
 use crossterm::{
     cursor,
+    cursor::{MoveToNextLine, RestorePosition, SavePosition},
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
-    style::{self},
+    style,
+    style::Stylize,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand, QueueableCommand,
 };

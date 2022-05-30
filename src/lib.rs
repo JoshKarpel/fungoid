@@ -186,7 +186,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             program,
             pointer: InstructionPointer::new(),
             stack: Stack::new(),
-            rng: rand::thread_rng(),
+            rng: thread_rng(),
             terminated: false,
             string_mode: false,
             trace,
@@ -512,7 +512,7 @@ mod tests {
 
     use crate::{Program, ProgramState};
 
-    const HELLO_WORLD: &'static str = r#"64+"!dlroW ,olleH">:#,_@"#;
+    const HELLO_WORLD: &str = r#"64+"!dlroW ,olleH">:#,_@"#;
 
     #[test]
     fn hello_world() -> Result<(), io::Error> {
@@ -526,7 +526,7 @@ mod tests {
         Ok(())
     }
 
-    const SIEVE_OF_ERATOSTHENES: &'static str = r#"2>:3g" "-!v\  g30          <
+    const SIEVE_OF_ERATOSTHENES: &str = r#"2>:3g" "-!v\  g30          <
  |!`"O":+1_:.:03p>03g+:"O"`|
  @               ^  p3\" ":<
 2 234567890123456789012345678901234567890123456789012345678901234567890123456789
@@ -547,7 +547,7 @@ mod tests {
         Ok(())
     }
 
-    const QUINE: &'static str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
+    const QUINE: &str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
 
     #[test]
     fn quine() -> Result<(), io::Error> {

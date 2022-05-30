@@ -8,15 +8,11 @@ use std::{
     time::Instant,
 };
 
-use crossterm::{
-    cursor,
-    cursor::{MoveToNextLine, RestorePosition, SavePosition},
-    event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
-    style,
-    style::Stylize,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand, QueueableCommand,
+use crossterm::event::{poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use crossterm::{event, execute};
 use humantime::format_duration;
 use rand::{
     distributions::{Distribution, Standard},
@@ -24,6 +20,13 @@ use rand::{
     Rng,
 };
 use separator::Separatable;
+use tui::backend::{Backend, CrosstermBackend};
+use tui::layout::{Constraint, Direction, Layout};
+use tui::style::{Color, Style};
+use tui::text::Span;
+use tui::widgets::canvas::Canvas;
+use tui::widgets::{Block, Borders};
+use tui::{Frame, Terminal};
 
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
@@ -72,23 +75,6 @@ impl Program {
     pub fn show(&self) {
         println!("{}", self);
     }
-
-    pub fn draw(&self, stdout: &mut dyn Write) -> crossterm::Result<()> {
-        let bar = vec!["─"; 80].join("");
-        let q = stdout
-            .queue(cursor::MoveTo(0, 0))?
-            .queue(style::PrintStyledContent(format!("┌{}┐", bar).white()))?;
-        for line in &self.0 {
-            q.queue(cursor::MoveToNextLine(1))?
-                .queue(style::PrintStyledContent(
-                    format!("│{}│", line.iter().collect::<String>()).white(),
-                ))?;
-        }
-        q.queue(cursor::MoveToNextLine(1))?
-            .queue(style::PrintStyledContent(format!("└{}┘", bar).white()))?;
-        stdout.flush()?;
-        Ok(())
-    }
 }
 
 impl fmt::Display for Program {
@@ -117,20 +103,20 @@ struct Position {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Direction {
+enum PointerDirection {
     Up,
     Down,
     Left,
     Right,
 }
 
-impl Distribution<Direction> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Direction {
+impl Distribution<PointerDirection> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PointerDirection {
         match rng.gen_range(0..4) {
-            0 => Direction::Up,
-            1 => Direction::Down,
-            2 => Direction::Left,
-            _ => Direction::Right,
+            0 => PointerDirection::Up,
+            1 => PointerDirection::Down,
+            2 => PointerDirection::Left,
+            _ => PointerDirection::Right,
         }
     }
 }
@@ -138,14 +124,14 @@ impl Distribution<Direction> for Standard {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InstructionPointer {
     position: Position,
-    direction: Direction,
+    direction: PointerDirection,
 }
 
 impl InstructionPointer {
     fn new() -> Self {
         InstructionPointer {
             position: Position { x: 0, y: 0 },
-            direction: Direction::Right,
+            direction: PointerDirection::Right,
         }
     }
 }
@@ -212,7 +198,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
 
     fn run(mut self) -> Self {
         while !self.terminated {
-            self = self.step();
+            self.step();
         }
 
         self
@@ -230,7 +216,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         );
     }
 
-    fn step(mut self) -> Self {
+    fn step(&mut self) {
         if self.trace {
             self.trace();
         }
@@ -240,27 +226,27 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         match self.program.get(&self.pointer.position) {
             '"' => self.string_mode = !self.string_mode,
             c if self.string_mode => self.stack.push(i64::from(c as u8)),
-            '^' => self.pointer.direction = Direction::Up,
-            'v' => self.pointer.direction = Direction::Down,
-            '>' => self.pointer.direction = Direction::Right,
-            '<' => self.pointer.direction = Direction::Left,
+            '^' => self.pointer.direction = PointerDirection::Up,
+            'v' => self.pointer.direction = PointerDirection::Down,
+            '>' => self.pointer.direction = PointerDirection::Right,
+            '<' => self.pointer.direction = PointerDirection::Left,
             '?' => self.pointer.direction = self.rng.gen(),
             '_' => {
                 // horizontal if
                 let top = self.stack.pop();
                 if top == 0 {
-                    self.pointer.direction = Direction::Right;
+                    self.pointer.direction = PointerDirection::Right;
                 } else {
-                    self.pointer.direction = Direction::Left;
+                    self.pointer.direction = PointerDirection::Left;
                 }
             }
             // vertical if
             '|' => {
                 let top = self.stack.pop();
                 if top == 0 {
-                    self.pointer.direction = Direction::Down;
+                    self.pointer.direction = PointerDirection::Down;
                 } else {
-                    self.pointer.direction = Direction::Up;
+                    self.pointer.direction = PointerDirection::Up;
                 }
             }
             // addition
@@ -379,7 +365,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             '@' => {
                 self.terminated = true;
                 self.instruction_count += 1;
-                return self;
+                return;
             }
             c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
             ' ' => {}
@@ -389,22 +375,15 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         move_pointer(&mut self.pointer);
 
         self.instruction_count += 1;
-        self
-    }
-}
-
-impl<'input, 'output> ProgramState<'input, 'output, Vec<u8>> {
-    fn pop_output(&mut self) -> Option<u8> {
-        self.output.pop()
     }
 }
 
 fn move_pointer(pointer: &mut InstructionPointer) {
     match pointer.direction {
-        Direction::Up => pointer.position.y -= 1,
-        Direction::Down => pointer.position.y += 1,
-        Direction::Right => pointer.position.x += 1,
-        Direction::Left => pointer.position.x -= 1,
+        PointerDirection::Up => pointer.position.y -= 1,
+        PointerDirection::Down => pointer.position.y += 1,
+        PointerDirection::Right => pointer.position.x += 1,
+        PointerDirection::Left => pointer.position.x -= 1,
     }
 }
 
@@ -429,142 +408,101 @@ pub fn time<O: Write>(program_state: ProgramState<O>) {
 
 pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
     let mut stdin = io::stdin();
-    let mut stdout = io::stdout();
-    let mut stderr = io::stderr();
-    let mut streams = StepStreams::new(&mut stdin, &mut stdout, &mut stderr);
-    streams.init()?;
-
-    let mut input = io::stdin();
     let mut output = Vec::new();
-    let mut program_state = ProgramState::new(program, false, &mut input, &mut output);
+    let mut program_state = ProgramState::new(program, false, &mut stdin, &mut output);
 
-    program.draw(&mut streams.output)?;
+    // setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    streams
-        .output
-        .queue(MoveToNextLine(2))?
-        .execute(SavePosition)?;
+    // create app and run it
+    let res = run_app(&mut terminal, &mut program_state, delay);
 
-    let mut output_width: u16 = 0;
-    let (terminal_width, _terminal_rows) = crossterm::terminal::size().unwrap_or((80, 30));
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
 
-    while !program_state.terminated {
-        streams
-            .output
-            .queue(cursor::MoveTo(
-                (program_state.pointer.position.x + 1) as u16,
-                (program_state.pointer.position.y + 1) as u16,
-            ))?
-            .queue(style::PrintStyledContent(
-                program.get(&program_state.pointer.position).white(),
-            ))?;
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
 
-        program_state = program_state.step();
+    Ok(())
+}
 
-        streams
-            .output
-            .queue(cursor::MoveTo(
-                (program_state.pointer.position.x + 1) as u16,
-                (program_state.pointer.position.y + 1) as u16,
-            ))?
-            .queue(style::PrintStyledContent(
-                program.get(&program_state.pointer.position).green(),
-            ))?;
+fn run_app<B: Backend, O: Write>(
+    terminal: &mut Terminal<B>,
+    program_state: &mut ProgramState<O>,
+    tick_rate: Duration,
+) -> io::Result<()> {
+    let mut last_tick = Instant::now();
+    let mut paused = false;
+    loop {
+        terminal.draw(|f| ui(f, program_state))?;
 
-        if let Some(c) = program_state.pop_output() {
-            output_width += 1;
-            match c {
-                // newline
-                _ if output_width > terminal_width - 2 => {
-                    output_width = 0;
-                    streams
-                        .output
-                        .queue(RestorePosition)?
-                        .queue(style::PrintStyledContent("⏎".green()))?
-                        .queue(MoveToNextLine(1))?
-                        .queue(SavePosition)?
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+        if poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') => {
+                        return Ok(());
+                    }
+                    KeyCode::Char(' ') => paused = !paused,
+                    _ => {}
                 }
-                10 => {
-                    output_width = 0;
-                    streams
-                        .output
-                        .queue(RestorePosition)?
-                        .queue(MoveToNextLine(1))?
-                        .queue(SavePosition)?
-                }
-                _ => streams
-                    .output
-                    .queue(RestorePosition)?
-                    .queue(style::PrintStyledContent((c as char).white()))?
-                    .queue(SavePosition)?,
-            };
-        };
-
-        streams.output.flush()?;
-
-        if poll(delay)? {
-            if let Event::Key(KeyEvent {
-                modifiers: KeyModifiers::CONTROL,
-                code: KeyCode::Char('c'),
-            }) = read()?
-            {
-                return Ok(());
             }
         }
-    }
 
-    streams
-        .output
-        .queue(cursor::MoveTo(
-            (program_state.pointer.position.x + 1) as u16,
-            (program_state.pointer.position.y + 1) as u16,
-        ))?
-        .execute(style::PrintStyledContent(
-            program.get(&program_state.pointer.position).red(),
-        ))?;
-
-    loop {
-        if let Event::Key(KeyEvent {
-            modifiers: KeyModifiers::CONTROL,
-            code: KeyCode::Char('c'),
-        }) = read()?
-        {
-            return Ok(());
+        if last_tick.elapsed() >= tick_rate {
+            if !paused {
+                program_state.step();
+            }
+            last_tick = Instant::now();
         }
     }
 }
 
-pub struct StepStreams<'input, 'output, 'error> {
-    _input: &'input mut dyn Read,
-    output: &'output mut dyn Write,
-    _error: &'error mut dyn Write,
-}
+fn ui<B: Backend, O: Write>(f: &mut Frame<B>, program_state: &ProgramState<O>) {
+    let w = f.size().width as f64;
+    let h = f.size().height as f64;
 
-impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
-    fn new(
-        input: &'input mut dyn Read,
-        output: &'output mut dyn Write,
-        error: &'error mut dyn Write,
-    ) -> Self {
-        StepStreams {
-            _input: input,
-            output,
-            _error: error,
-        }
-    }
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(f.size());
+    let canvas = Canvas::default()
+        .block(Block::default().borders(Borders::ALL).title("Program"))
+        .paint(|ctx| {
+            for (y, line) in program_state.program.0.iter().enumerate() {
+                for (x, c) in line.iter().enumerate() {
+                    let style = if program_state.pointer.position.x == x
+                        && program_state.pointer.position.y == y
+                    {
+                        Style::default().bg(Color::Green)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
 
-    fn init(&mut self) -> crossterm::Result<()> {
-        self.output.execute(EnterAlternateScreen)?;
-        enable_raw_mode()?;
-        Ok(())
-    }
-}
-
-impl<'input, 'output, 'error> Drop for StepStreams<'input, 'output, 'error> {
-    fn drop(&mut self) {
-        self.output.execute(LeaveAlternateScreen).unwrap();
-        disable_raw_mode().unwrap();
-    }
+                    ctx.print(
+                        x as f64,
+                        h - (y as f64) - 1.0,
+                        Span::styled(c.to_string(), style),
+                    );
+                }
+            }
+        })
+        .x_bounds([0.0, w])
+        .y_bounds([0.0, h]);
+    f.render_widget(canvas, chunks[0]);
 }
 
 #[cfg(test)]

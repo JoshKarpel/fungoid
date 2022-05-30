@@ -4,6 +4,7 @@ extern crate humantime;
 extern crate rand;
 extern crate separator;
 
+use std::str::FromStr;
 use std::{
     cmp::Ordering,
     fmt,
@@ -14,10 +15,11 @@ use std::{
 };
 
 use crossterm::cursor::{MoveToNextLine, RestorePosition, SavePosition};
+use crossterm::style::Stylize;
 use crossterm::{
     cursor,
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
-    style::{self, Colorize},
+    style::{self},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand, QueueableCommand,
 };
@@ -32,12 +34,10 @@ use separator::Separatable;
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
 
-impl Program {
-    fn new() -> Self {
-        Program([[' '; 80]; 30])
-    }
+impl FromStr for Program {
+    type Err = io::Error;
 
-    pub fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Result<Program, io::Error> {
         let mut program = Program::new();
 
         for (y, line) in s.split('\n').enumerate() {
@@ -46,15 +46,21 @@ impl Program {
             }
         }
 
-        program
+        Ok(program)
+    }
+}
+
+impl Program {
+    fn new() -> Self {
+        Program([[' '; 80]; 30])
     }
 
-    pub fn from_file(path: &str) -> Result<Self, std::io::Error> {
+    pub fn from_file(path: &str) -> Result<Self, io::Error> {
         let mut f = File::open(path)?;
         let mut contents = String::new();
         f.read_to_string(&mut contents)?;
 
-        Ok(Program::from_str(&contents))
+        Program::from_str(&contents)
     }
 
     fn get(&self, pos: &Position) -> char {
@@ -73,7 +79,7 @@ impl Program {
         println!("{}", self);
     }
 
-    pub fn draw(&self, mut stdout: &mut dyn Write) -> crossterm::Result<()> {
+    pub fn draw(&self, stdout: &mut dyn Write) -> crossterm::Result<()> {
         let bar = vec!["─"; 80].join("");
         let q = stdout
             .queue(cursor::MoveTo(0, 0))?
@@ -126,7 +132,7 @@ enum Direction {
 
 impl Distribution<Direction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Direction {
-        match rng.gen_range(0, 4) {
+        match rng.gen_range(0..4) {
             0 => Direction::Up,
             1 => Direction::Down,
             2 => Direction::Left,
@@ -331,12 +337,10 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             }
             '.' => {
                 write!(self.output, "{}", self.stack.pop()).expect("Failed to write int");
-                ()
             }
             ',' => {
                 write!(self.output, "{}", self.stack.pop() as u8 as char)
                     .expect("Failed to write char");
-                ()
             }
             '#' => move_pointer(&mut self.pointer),
             // get
@@ -424,7 +428,7 @@ pub fn time<O: Write>(program_state: ProgramState<O>) {
     eprintln!(
         "Executed {} instructions in {} ({} instructions/second)",
         instruction_count,
-        format_duration(duration).to_string(),
+        format_duration(duration),
         ((instruction_count as f64 / num_seconds) as u64).separated_string()
     );
 }
@@ -505,12 +509,12 @@ pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
         streams.output.flush()?;
 
         if poll(delay)? {
-            match read()? {
-                Event::Key(KeyEvent {
-                    modifiers: KeyModifiers::CONTROL,
-                    code: KeyCode::Char('c'),
-                }) => return Ok(()),
-                _ => {}
+            if let Event::Key(KeyEvent {
+                modifiers: KeyModifiers::CONTROL,
+                code: KeyCode::Char('c'),
+            }) = read()?
+            {
+                return Ok(());
             }
         }
     }
@@ -526,20 +530,20 @@ pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
         ))?;
 
     loop {
-        match read()? {
-            Event::Key(KeyEvent {
-                modifiers: KeyModifiers::CONTROL,
-                code: KeyCode::Char('c'),
-            }) => return Ok(()),
-            _ => {}
+        if let Event::Key(KeyEvent {
+            modifiers: KeyModifiers::CONTROL,
+            code: KeyCode::Char('c'),
+        }) = read()?
+        {
+            return Ok(());
         }
     }
 }
 
 pub struct StepStreams<'input, 'output, 'error> {
-    input: &'input mut dyn Read,
+    _input: &'input mut dyn Read,
     output: &'output mut dyn Write,
-    error: &'error mut dyn Write,
+    _error: &'error mut dyn Write,
 }
 
 impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
@@ -549,9 +553,9 @@ impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
         error: &'error mut dyn Write,
     ) -> Self {
         StepStreams {
-            input,
+            _input: input,
             output,
-            error,
+            _error: error,
         }
     }
 
@@ -566,26 +570,28 @@ impl<'input, 'output, 'error> Drop for StepStreams<'input, 'output, 'error> {
     fn drop(&mut self) {
         self.output.execute(LeaveAlternateScreen).unwrap();
         disable_raw_mode().unwrap();
-        ()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Program, ProgramState};
-
     use std::io;
+    use std::str::FromStr;
+
+    use crate::{Program, ProgramState};
 
     const HELLO_WORLD: &'static str = r#"64+"!dlroW ,olleH">:#,_@"#;
 
     #[test]
-    fn hello_world() {
-        let program = Program::from_str(HELLO_WORLD);
+    fn hello_world() -> Result<(), io::Error> {
+        let program = Program::from_str(HELLO_WORLD)?;
         println!("{}", program);
         let mut output = Vec::new();
         ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
         assert_eq!("Hello, World!\n", String::from_utf8(output).unwrap());
+
+        Ok(())
     }
 
     const SIEVE_OF_ERATOSTHENES: &'static str = r#"2>:3g" "-!v\  g30          <
@@ -595,8 +601,8 @@ mod tests {
 "#;
 
     #[test]
-    fn sieve_of_eratosthenes() {
-        let program = Program::from_str(SIEVE_OF_ERATOSTHENES);
+    fn sieve_of_eratosthenes() -> Result<(), io::Error> {
+        let program = Program::from_str(SIEVE_OF_ERATOSTHENES)?;
         println!("{}", program);
         let mut output = Vec::new();
         ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
@@ -605,13 +611,15 @@ mod tests {
             "2357111317192329313741434753596167717379",
             String::from_utf8(output).unwrap()
         );
+
+        Ok(())
     }
 
     const QUINE: &'static str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
 
     #[test]
-    fn quine() {
-        let program = Program::from_str(QUINE);
+    fn quine() -> Result<(), io::Error> {
+        let program = Program::from_str(QUINE)?;
         println!("{}", program);
         let mut output = Vec::new();
         ProgramState::new(program, false, &mut io::stdin(), &mut output).run();
@@ -620,5 +628,7 @@ mod tests {
             "01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@",
             String::from_utf8(output).unwrap()
         );
+
+        Ok(())
     }
 }

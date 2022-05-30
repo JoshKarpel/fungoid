@@ -1,9 +1,10 @@
 extern crate clap;
 extern crate fungoid;
 
-use clap::{App, Arg, ArgMatches, SubCommand};
 use std::io;
 use std::time::Duration;
+
+use clap::{Arg, ArgMatches, Command};
 
 fn main() {
     if let Err(e) = _main() {
@@ -15,40 +16,40 @@ fn main() {
 type MainError = Result<(), Box<dyn std::error::Error>>;
 
 fn _main() -> MainError {
-    let matches = App::new("fungoid")
-        .version("0.1.0")
+    let matches = Command::new("fungoid")
+        .version("0.2.0")
         .author("Josh Karpel <josh.karpel@gmail.com>")
         .about("A Befunge interpreter written in Rust")
         .subcommand(
-            SubCommand::with_name("run")
-                .arg(Arg::with_name("time").long("time").help("enable timing"))
+            Command::new("run")
+                .arg(Arg::new("time").long("time").help("enable timing"))
                 .arg(
-                    Arg::with_name("show")
+                    Arg::new("show")
                         .long("show")
                         .help("show program before executing"),
                 )
                 .arg(
-                    Arg::with_name("trace")
+                    Arg::new("trace")
                         .long("trace")
                         .help("trace program execution"),
                 )
                 .arg(
-                    Arg::with_name("FILE")
+                    Arg::new("FILE")
                         .help("file to read program from")
                         .required(true),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("step")
+            Command::new("step")
                 .arg(
-                    Arg::with_name("rate")
+                    Arg::new("rate")
                         .long("rate")
                         .takes_value(true)
                         .default_value("10")
                         .help("maximum instructions per second"),
                 )
                 .arg(
-                    Arg::with_name("FILE")
+                    Arg::new("FILE")
                         .help("file to read program from")
                         .required(true),
                 ),
@@ -65,7 +66,7 @@ fn _main() -> MainError {
 }
 
 fn step(matches: &ArgMatches) -> MainError {
-    let program = fungoid::Program::from_file(&matches.value_of("FILE").unwrap())?;
+    let program = fungoid::Program::from_file(matches.value_of("FILE").unwrap())?;
 
     let max_ips: u32 = matches.value_of("rate").unwrap().parse()?;
     let dur = Duration::from_secs_f64(match max_ips {
@@ -79,7 +80,7 @@ fn step(matches: &ArgMatches) -> MainError {
 }
 
 fn run(matches: &ArgMatches) -> MainError {
-    let program = fungoid::Program::from_file(&matches.value_of("FILE").unwrap())?;
+    let program = fungoid::Program::from_file(matches.value_of("FILE").unwrap())?;
 
     if matches.is_present("show") {
         program.show();

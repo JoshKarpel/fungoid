@@ -39,7 +39,7 @@ impl FromStr for Program {
 
         for (y, line) in s.split('\n').enumerate() {
             for (x, ch) in line.chars().enumerate() {
-                program.set(&Position { x, y }, ch);
+                program.set(&PointerPosition { x, y }, ch);
             }
         }
 
@@ -60,16 +60,12 @@ impl Program {
         Program::from_str(&contents)
     }
 
-    fn get(&self, pos: &Position) -> char {
+    fn get(&self, pos: &PointerPosition) -> char {
         self.0[pos.y][pos.x]
     }
 
-    fn set(&mut self, pos: &Position, c: char) {
+    fn set(&mut self, pos: &PointerPosition, c: char) {
         self.0[pos.y][pos.x] = c;
-    }
-
-    pub fn str(&self) -> String {
-        format!("{}", self)
     }
 
     pub fn show(&self) {
@@ -97,7 +93,7 @@ impl fmt::Display for Program {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct Position {
+struct PointerPosition {
     x: usize,
     y: usize,
 }
@@ -123,14 +119,14 @@ impl Distribution<PointerDirection> for Standard {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InstructionPointer {
-    position: Position,
+    position: PointerPosition,
     direction: PointerDirection,
 }
 
 impl InstructionPointer {
     fn new() -> Self {
         InstructionPointer {
-            position: Position { x: 0, y: 0 },
+            position: PointerPosition { x: 0, y: 0 },
             direction: PointerDirection::Right,
         }
     }
@@ -196,6 +192,15 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         }
     }
 
+    fn reset(&mut self) {
+        self.pointer = InstructionPointer::new();
+        self.stack = Stack::new();
+        self.rng = thread_rng();
+        self.terminated = false;
+        self.string_mode = false;
+        self.instruction_count = 0;
+    }
+
     fn run(mut self) -> Self {
         while !self.terminated {
             self.step();
@@ -220,6 +225,8 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         if self.trace {
             self.trace();
         }
+
+        self.instruction_count += 1;
 
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
@@ -327,10 +334,11 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             'g' => {
                 let y = self.stack.pop();
                 let x = self.stack.pop();
-                self.stack.push(i64::from(self.program.get(&Position {
-                    x: x as usize,
-                    y: y as usize,
-                }) as u8));
+                self.stack
+                    .push(i64::from(self.program.get(&PointerPosition {
+                        x: x as usize,
+                        y: y as usize,
+                    }) as u8));
             }
             // push
             'p' => {
@@ -338,7 +346,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
                 let x = self.stack.pop();
                 let v = self.stack.pop();
                 self.program.set(
-                    &Position {
+                    &PointerPosition {
                         x: x as usize,
                         y: y as usize,
                     },
@@ -364,8 +372,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             }
             '@' => {
                 self.terminated = true;
-                self.instruction_count += 1;
-                return;
+                return; // exit immediately (do not move the pointer when terminating)
             }
             c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
             ' ' => {}
@@ -373,8 +380,6 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         }
 
         move_pointer(&mut self.pointer);
-
-        self.instruction_count += 1;
     }
 }
 
@@ -407,10 +412,6 @@ pub fn time<O: Write>(program_state: ProgramState<O>) {
 }
 
 pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
-    let mut stdin = io::stdin();
-    let mut output = Vec::new();
-    let mut program_state = ProgramState::new(program, false, &mut stdin, &mut output);
-
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -419,7 +420,7 @@ pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let res = run_app(&mut terminal, &mut program_state, delay);
+    let res = run_app(&mut terminal, program, delay);
 
     // restore terminal
     disable_raw_mode()?;
@@ -437,15 +438,20 @@ pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
     Ok(())
 }
 
-fn run_app<B: Backend, O: Write>(
+fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
-    program_state: &mut ProgramState<O>,
+    program: Program,
     tick_rate: Duration,
 ) -> io::Result<()> {
+    let mut stdin = io::stdin();
+    let mut output = Vec::new();
+
+    let mut program_state = ProgramState::new(program, false, &mut stdin, &mut output);
+
     let mut last_tick = Instant::now();
     let mut paused = false;
     loop {
-        terminal.draw(|f| ui(f, program_state))?;
+        terminal.draw(|f| ui(f, &program_state))?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -456,6 +462,7 @@ fn run_app<B: Backend, O: Write>(
                     KeyCode::Char('q') => {
                         return Ok(());
                     }
+                    KeyCode::Char('r') => program_state.reset(),
                     KeyCode::Char(' ') => paused = !paused,
                     _ => {}
                 }

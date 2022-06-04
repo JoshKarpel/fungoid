@@ -409,7 +409,7 @@ pub fn time<O: Write>(program_state: ProgramState<O>) {
     );
 }
 
-pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
+pub fn step(program: Program) -> crossterm::Result<()> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -418,7 +418,7 @@ pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let res = run_app(&mut terminal, program, delay);
+    let res = run_app(&mut terminal, program);
 
     // restore terminal
     disable_raw_mode()?;
@@ -436,11 +436,9 @@ pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
     Ok(())
 }
 
-fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    program: Program,
-    tick_rate: Duration,
-) -> io::Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Result<()> {
+    let mut max_ips: u32 = 10;
+
     let mut stdin = io::stdin();
     let mut output = Vec::new();
 
@@ -450,6 +448,8 @@ fn run_app<B: Backend>(
     let mut paused = false;
     loop {
         terminal.draw(|f| ui(f, &program_state))?;
+
+        let tick_rate = Duration::from_secs_f64(1.0 / (max_ips as f64));
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -465,6 +465,8 @@ fn run_app<B: Backend>(
                         program_state.output.clear();
                     }
                     KeyCode::Char(' ') => paused = !paused,
+                    KeyCode::Char('+') => max_ips = (max_ips + 1).max(1),
+                    KeyCode::Char('-') => max_ips = (max_ips - 1).max(1),
                     _ => {}
                 }
             }

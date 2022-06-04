@@ -1,13 +1,14 @@
-use execution::ExecutionState;
-use humantime::format_duration;
-use separator::Separatable;
 use std::{io::prelude::*, time::Instant};
 
+use humantime::format_duration;
+use separator::Separatable;
+
+use execution::ExecutionState;
 use program::{Position, Program};
 
 pub mod execution;
+pub mod ide;
 pub mod program;
-pub mod step;
 
 pub fn run_to_termination<O: Write>(program_state: ExecutionState<O>) -> u64 {
     program_state.run().instruction_count
@@ -41,7 +42,6 @@ mod tests {
     #[test]
     fn hello_world() -> Result<(), io::Error> {
         let program = Program::from_str(HELLO_WORLD)?;
-        println!("{}", program);
         let mut output = Vec::new();
         ExecutionState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
@@ -59,7 +59,6 @@ mod tests {
     #[test]
     fn sieve_of_eratosthenes() -> Result<(), io::Error> {
         let program = Program::from_str(SIEVE_OF_ERATOSTHENES)?;
-        println!("{}", program);
         let mut output = Vec::new();
         ExecutionState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);
@@ -76,7 +75,6 @@ mod tests {
     #[test]
     fn quine() -> Result<(), io::Error> {
         let program = Program::from_str(QUINE)?;
-        println!("{}", program);
         let mut output = Vec::new();
         ExecutionState::new(program, false, &mut io::stdin(), &mut output).run();
         println!("{:?}", output);

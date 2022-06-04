@@ -23,11 +23,6 @@ fn _main() -> MainError {
             Command::new("run")
                 .arg(Arg::new("time").long("time").help("enable timing"))
                 .arg(
-                    Arg::new("show")
-                        .long("show")
-                        .help("show program before executing"),
-                )
-                .arg(
                     Arg::new("trace")
                         .long("trace")
                         .help("trace program execution"),
@@ -39,7 +34,7 @@ fn _main() -> MainError {
                 ),
         )
         .subcommand(
-            Command::new("step").arg(
+            Command::new("ide").arg(
                 Arg::new("FILE")
                     .help("file to read program from")
                     .required(true),
@@ -47,8 +42,8 @@ fn _main() -> MainError {
         )
         .get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("step") {
-        step(matches)?;
+    if let Some(matches) = matches.subcommand_matches("ide") {
+        ide(matches)?;
     } else if let Some(matches) = matches.subcommand_matches("run") {
         run(matches)?;
     }
@@ -56,20 +51,16 @@ fn _main() -> MainError {
     Ok(())
 }
 
-fn step(matches: &ArgMatches) -> MainError {
+fn ide(matches: &ArgMatches) -> MainError {
     let program = fungoid::program::Program::from_file(matches.value_of("FILE").unwrap())?;
 
-    fungoid::step::step(program)?;
+    fungoid::ide::ide(program)?;
 
     Ok(())
 }
 
 fn run(matches: &ArgMatches) -> MainError {
     let program = fungoid::program::Program::from_file(matches.value_of("FILE").unwrap())?;
-
-    if matches.is_present("show") {
-        program.show();
-    }
 
     let input = &mut io::stdin();
     let output = &mut io::stdout();

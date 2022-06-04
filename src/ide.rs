@@ -1,5 +1,7 @@
-use std::io;
-use std::time::{Duration, Instant};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use crossterm::{
     event,
@@ -7,6 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use itertools::Itertools;
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
@@ -17,8 +20,9 @@ use tui::{
 
 use crate::execution::ExecutionState;
 use crate::program::Program;
+use crate::Position;
 
-pub fn step(program: Program) -> crossterm::Result<()> {
+pub fn ide(program: Program) -> crossterm::Result<()> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -54,9 +58,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
     let mut program_state = ExecutionState::new(program, false, &mut stdin, &mut output);
 
     let mut last_tick = Instant::now();
+
     let mut paused = false;
+    let mut follow = false;
+    let mut view_center = Position { x: 0, y: 0 };
+
     loop {
-        terminal.draw(|f| ui(f, &program_state))?;
+        terminal.draw(|f| ui(f, &program_state, &view_center))?;
 
         let tick_rate = Duration::from_secs_f64(1.0 / (max_ips as f64));
 
@@ -74,8 +82,37 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
                         program_state.output.clear();
                     }
                     KeyCode::Char(' ') => paused = !paused,
+                    KeyCode::Char('f') => follow = !follow,
                     KeyCode::Char('+') => max_ips = (max_ips + 1).max(1),
                     KeyCode::Char('-') => max_ips = (max_ips - 1).max(1),
+                    KeyCode::Left => {
+                        view_center = Position {
+                            x: view_center.x - 1,
+                            y: view_center.y,
+                        };
+                        follow = false;
+                    }
+                    KeyCode::Right => {
+                        view_center = Position {
+                            x: view_center.x + 1,
+                            y: view_center.y,
+                        };
+                        follow = false;
+                    }
+                    KeyCode::Up => {
+                        view_center = Position {
+                            x: view_center.x,
+                            y: view_center.y + 1,
+                        };
+                        follow = false;
+                    }
+                    KeyCode::Down => {
+                        view_center = Position {
+                            x: view_center.x,
+                            y: view_center.y - 1,
+                        };
+                        follow = false;
+                    }
                     _ => {}
                 }
             }
@@ -84,33 +121,66 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
         if last_tick.elapsed() >= tick_rate {
             if !paused {
                 program_state.step();
+                if follow {
+                    view_center = program_state.pointer.position
+                }
             }
             last_tick = Instant::now();
         }
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>) {
+fn ui<B: Backend>(
+    f: &mut Frame<B>,
+    program_state: &ExecutionState<Vec<u8>>,
+    view_center: &Position,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
         .split(f.size());
 
-    let program_grid = Table::new(program_state.program.0.iter().enumerate().map(|(y, row)| {
-        Row::new(row.iter().enumerate().map(|(x, c)| {
-            Cell::from(c.to_string()).style(
-                if program_state.pointer.position.x == x && program_state.pointer.position.y == y {
-                    if program_state.terminated {
-                        Style::default().bg(Color::Red)
+    let pointer_position = program_state.pointer.position;
+    let terminated = program_state.terminated;
+
+    let w = chunks[0].width as isize;
+    let h = chunks[0].height as isize;
+
+    let upper_left = Position {
+        x: view_center.x - w / 2,
+        y: view_center.y + h / 2,
+    };
+    let lower_right = Position {
+        x: upper_left.x + w,
+        y: upper_left.y - h,
+    };
+
+    let widths = vec![Constraint::Length(1); w as usize];
+
+    let program_grid = Table::new(
+        program_state
+            .program
+            .view(&upper_left, &lower_right)
+            .iter()
+            .group_by(|(p, _)| p.y)
+            .into_iter()
+            .map(|(_, row)| {
+                Row::new(row.map(|(p, c)| {
+                    let style = if p == &pointer_position {
+                        if terminated {
+                            Style::default().bg(Color::Red)
+                        } else {
+                            Style::default().bg(Color::Green)
+                        }
+                    } else if p == view_center {
+                        Style::default().bg(Color::LightMagenta)
                     } else {
-                        Style::default().bg(Color::Green)
-                    }
-                } else {
-                    Style::default().fg(Color::White)
-                },
-            )
-        }))
-    }))
+                        Style::default()
+                    };
+                    Cell::from(c.to_string()).style(style)
+                }))
+            }),
+    )
     .block(
         Block::default()
             .title(" Program ")
@@ -118,7 +188,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>) {
             .borders(Borders::ALL),
     )
     .style(Style::default().fg(Color::White).bg(Color::Black))
-    .widths(&[Constraint::Length(1); 30])
+    .widths(&*widths)
     .column_spacing(0);
 
     let o = std::str::from_utf8(program_state.output).unwrap();

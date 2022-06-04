@@ -1,9 +1,12 @@
-use crate::{Position, Program};
+use std::cmp::Ordering;
+use std::convert::TryInto;
+use std::io::{Read, Write};
+
 use rand::distributions::{Distribution, Standard};
 use rand::prelude::ThreadRng;
 use rand::{thread_rng, Rng};
-use std::cmp::Ordering;
-use std::io::{Read, Write};
+
+use crate::{Position, Program};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PointerDirection {
@@ -40,18 +43,18 @@ impl InstructionPointer {
 }
 
 #[derive(Debug)]
-struct Stack(Vec<i64>);
+struct Stack(Vec<isize>);
 
 impl Stack {
     fn new() -> Stack {
-        Stack(Vec::<i64>::new())
+        Stack(Vec::<isize>::new())
     }
 
-    fn push(&mut self, val: i64) {
+    fn push(&mut self, val: isize) {
         self.0.push(val);
     }
 
-    fn pop(&mut self) -> i64 {
+    fn pop(&mut self) -> isize {
         self.0.pop().unwrap_or(0)
     }
 
@@ -139,7 +142,7 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
         // https://esolangs.org/wiki/Befunge#Instructions
         match self.program.get(&self.pointer.position) {
             '"' => self.string_mode = !self.string_mode,
-            c if self.string_mode => self.stack.push(i64::from(c as u8)),
+            c if self.string_mode => self.stack.push(isize::from(c as u8)),
             '^' => self.pointer.direction = PointerDirection::Up,
             'v' => self.pointer.direction = PointerDirection::Down,
             '>' => self.pointer.direction = PointerDirection::Right,
@@ -241,23 +244,15 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
             'g' => {
                 let y = self.stack.pop();
                 let x = self.stack.pop();
-                self.stack.push(i64::from(self.program.get(&Position {
-                    x: x as usize,
-                    y: y as usize,
-                }) as u8));
+                self.stack
+                    .push(isize::from(self.program.get(&Position { x, y }) as u8));
             }
             // push
             'p' => {
                 let y = self.stack.pop();
                 let x = self.stack.pop();
                 let v = self.stack.pop();
-                self.program.set(
-                    &Position {
-                        x: x as usize,
-                        y: y as usize,
-                    },
-                    v as u8 as char,
-                );
+                self.program.set(&Position { x, y }, v as u8 as char);
             }
             // get int from user
             '&' => {
@@ -265,7 +260,7 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
                 self.input
                     .read_to_string(&mut input)
                     .expect("failed to read int");
-                self.stack.push(input.trim().parse::<i64>().unwrap());
+                self.stack.push(input.trim().parse::<isize>().unwrap());
             }
             // get char from user
             '~' => {
@@ -274,13 +269,13 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
                     .read_to_string(&mut input)
                     .expect("failed to read char");
                 self.stack
-                    .push(i64::from(input.chars().next().unwrap() as u8));
+                    .push(isize::from(input.chars().next().unwrap() as u8));
             }
             '@' => {
                 self.terminated = true;
                 return; // exit immediately (do not move the pointer when terminating)
             }
-            c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
+            c @ '0'..='9' => self.stack.push(c.to_digit(10).unwrap().try_into().unwrap()),
             ' ' => {}
             c => panic!("Unrecognized instruction! {}", c),
         }
@@ -291,8 +286,8 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
 
 fn move_pointer(pointer: &mut InstructionPointer) {
     match pointer.direction {
-        PointerDirection::Up => pointer.position.y -= 1,
-        PointerDirection::Down => pointer.position.y += 1,
+        PointerDirection::Up => pointer.position.y += 1,
+        PointerDirection::Down => pointer.position.y -= 1,
         PointerDirection::Right => pointer.position.x += 1,
         PointerDirection::Left => pointer.position.x -= 1,
     }

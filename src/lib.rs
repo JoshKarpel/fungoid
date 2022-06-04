@@ -21,11 +21,9 @@ use rand::{
 };
 use separator::Separatable;
 use tui::backend::{Backend, CrosstermBackend};
-use tui::layout::{Constraint, Direction, Layout};
+use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Style};
-use tui::text::Span;
-use tui::widgets::canvas::Canvas;
-use tui::widgets::{Block, Borders};
+use tui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap};
 use tui::{Frame, Terminal};
 
 #[derive(Copy, Clone)]
@@ -462,7 +460,10 @@ fn run_app<B: Backend>(
                     KeyCode::Char('q') => {
                         return Ok(());
                     }
-                    KeyCode::Char('r') => program_state.reset(),
+                    KeyCode::Char('r') => {
+                        program_state.reset();
+                        program_state.output.clear();
+                    }
                     KeyCode::Char(' ') => paused = !paused,
                     _ => {}
                 }
@@ -478,38 +479,51 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend, O: Write>(f: &mut Frame<B>, program_state: &ProgramState<O>) {
-    let w = f.size().width as f64;
-    let h = f.size().height as f64;
-
+fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ProgramState<Vec<u8>>) {
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(100)].as_ref())
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
         .split(f.size());
-    let canvas = Canvas::default()
-        .block(Block::default().borders(Borders::ALL).title("Program"))
-        .paint(|ctx| {
-            for (y, line) in program_state.program.0.iter().enumerate() {
-                for (x, c) in line.iter().enumerate() {
-                    let style = if program_state.pointer.position.x == x
-                        && program_state.pointer.position.y == y
-                    {
-                        Style::default().bg(Color::Green)
-                    } else {
-                        Style::default().fg(Color::White)
-                    };
 
-                    ctx.print(
-                        x as f64,
-                        h - (y as f64) - 1.0,
-                        Span::styled(c.to_string(), style),
-                    );
-                }
-            }
-        })
-        .x_bounds([0.0, w])
-        .y_bounds([0.0, h]);
-    f.render_widget(canvas, chunks[0]);
+    let program_grid = Table::new(program_state.program.0.iter().enumerate().map(|(y, row)| {
+        Row::new(row.iter().enumerate().map(|(x, c)| {
+            Cell::from(c.to_string()).style(
+                if program_state.pointer.position.x == x && program_state.pointer.position.y == y {
+                    if program_state.terminated {
+                        Style::default().bg(Color::Red)
+                    } else {
+                        Style::default().bg(Color::Green)
+                    }
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            )
+        }))
+    }))
+    .block(
+        Block::default()
+            .title(" Program ")
+            .title_alignment(Alignment::Center)
+            .borders(Borders::ALL),
+    )
+    .style(Style::default().fg(Color::White).bg(Color::Black))
+    .widths(&[Constraint::Length(1); 30])
+    .column_spacing(0);
+
+    let o = std::str::from_utf8(program_state.output).unwrap();
+    let output = Paragraph::new(o)
+        .block(
+            Block::default()
+                .title(" Output ")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL),
+        )
+        .style(Style::default().fg(Color::White).bg(Color::Black))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(program_grid, chunks[0]);
+    f.render_widget(output, chunks[1]);
 }
 
 #[cfg(test)]

@@ -1,9 +1,3 @@
-extern crate chrono;
-extern crate crossterm;
-extern crate humantime;
-extern crate rand;
-extern crate separator;
-
 use std::str::FromStr;
 use std::{
     cmp::Ordering,
@@ -14,15 +8,11 @@ use std::{
     time::Instant,
 };
 
-use crossterm::cursor::{MoveToNextLine, RestorePosition, SavePosition};
-use crossterm::style::Stylize;
-use crossterm::{
-    cursor,
-    event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
-    style::{self},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand, QueueableCommand,
+use crossterm::event::{poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use crossterm::{event, execute};
 use humantime::format_duration;
 use rand::{
     distributions::{Distribution, Standard},
@@ -30,6 +20,11 @@ use rand::{
     Rng,
 };
 use separator::Separatable;
+use tui::backend::{Backend, CrosstermBackend};
+use tui::layout::{Alignment, Constraint, Direction, Layout};
+use tui::style::{Color, Style};
+use tui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap};
+use tui::{Frame, Terminal};
 
 #[derive(Copy, Clone)]
 pub struct Program([[char; 80]; 30]);
@@ -42,7 +37,7 @@ impl FromStr for Program {
 
         for (y, line) in s.split('\n').enumerate() {
             for (x, ch) in line.chars().enumerate() {
-                program.set(&Position { x, y }, ch);
+                program.set(&PointerPosition { x, y }, ch);
             }
         }
 
@@ -63,37 +58,16 @@ impl Program {
         Program::from_str(&contents)
     }
 
-    fn get(&self, pos: &Position) -> char {
+    fn get(&self, pos: &PointerPosition) -> char {
         self.0[pos.y][pos.x]
     }
 
-    fn set(&mut self, pos: &Position, c: char) {
+    fn set(&mut self, pos: &PointerPosition, c: char) {
         self.0[pos.y][pos.x] = c;
-    }
-
-    pub fn str(&self) -> String {
-        format!("{}", self)
     }
 
     pub fn show(&self) {
         println!("{}", self);
-    }
-
-    pub fn draw(&self, stdout: &mut dyn Write) -> crossterm::Result<()> {
-        let bar = vec!["─"; 80].join("");
-        let q = stdout
-            .queue(cursor::MoveTo(0, 0))?
-            .queue(style::PrintStyledContent(format!("┌{}┐", bar).white()))?;
-        for line in &self.0 {
-            q.queue(cursor::MoveToNextLine(1))?
-                .queue(style::PrintStyledContent(
-                    format!("│{}│", line.iter().collect::<String>()).white(),
-                ))?;
-        }
-        q.queue(cursor::MoveToNextLine(1))?
-            .queue(style::PrintStyledContent(format!("└{}┘", bar).white()))?;
-        stdout.flush()?;
-        Ok(())
     }
 }
 
@@ -117,41 +91,41 @@ impl fmt::Display for Program {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct Position {
+struct PointerPosition {
     x: usize,
     y: usize,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Direction {
+enum PointerDirection {
     Up,
     Down,
     Left,
     Right,
 }
 
-impl Distribution<Direction> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Direction {
+impl Distribution<PointerDirection> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PointerDirection {
         match rng.gen_range(0..4) {
-            0 => Direction::Up,
-            1 => Direction::Down,
-            2 => Direction::Left,
-            _ => Direction::Right,
+            0 => PointerDirection::Up,
+            1 => PointerDirection::Down,
+            2 => PointerDirection::Left,
+            _ => PointerDirection::Right,
         }
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InstructionPointer {
-    position: Position,
-    direction: Direction,
+    position: PointerPosition,
+    direction: PointerDirection,
 }
 
 impl InstructionPointer {
     fn new() -> Self {
         InstructionPointer {
-            position: Position { x: 0, y: 0 },
-            direction: Direction::Right,
+            position: PointerPosition { x: 0, y: 0 },
+            direction: PointerDirection::Right,
         }
     }
 }
@@ -206,7 +180,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             program,
             pointer: InstructionPointer::new(),
             stack: Stack::new(),
-            rng: rand::thread_rng(),
+            rng: thread_rng(),
             terminated: false,
             string_mode: false,
             trace,
@@ -216,9 +190,18 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         }
     }
 
+    fn reset(&mut self) {
+        self.pointer = InstructionPointer::new();
+        self.stack = Stack::new();
+        self.rng = thread_rng();
+        self.terminated = false;
+        self.string_mode = false;
+        self.instruction_count = 0;
+    }
+
     fn run(mut self) -> Self {
         while !self.terminated {
-            self = self.step();
+            self.step();
         }
 
         self
@@ -236,37 +219,39 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         );
     }
 
-    fn step(mut self) -> Self {
+    fn step(&mut self) {
         if self.trace {
             self.trace();
         }
+
+        self.instruction_count += 1;
 
         // execute instruction at pointer
         // https://esolangs.org/wiki/Befunge#Instructions
         match self.program.get(&self.pointer.position) {
             '"' => self.string_mode = !self.string_mode,
             c if self.string_mode => self.stack.push(i64::from(c as u8)),
-            '^' => self.pointer.direction = Direction::Up,
-            'v' => self.pointer.direction = Direction::Down,
-            '>' => self.pointer.direction = Direction::Right,
-            '<' => self.pointer.direction = Direction::Left,
+            '^' => self.pointer.direction = PointerDirection::Up,
+            'v' => self.pointer.direction = PointerDirection::Down,
+            '>' => self.pointer.direction = PointerDirection::Right,
+            '<' => self.pointer.direction = PointerDirection::Left,
             '?' => self.pointer.direction = self.rng.gen(),
             '_' => {
                 // horizontal if
                 let top = self.stack.pop();
                 if top == 0 {
-                    self.pointer.direction = Direction::Right;
+                    self.pointer.direction = PointerDirection::Right;
                 } else {
-                    self.pointer.direction = Direction::Left;
+                    self.pointer.direction = PointerDirection::Left;
                 }
             }
             // vertical if
             '|' => {
                 let top = self.stack.pop();
                 if top == 0 {
-                    self.pointer.direction = Direction::Down;
+                    self.pointer.direction = PointerDirection::Down;
                 } else {
-                    self.pointer.direction = Direction::Up;
+                    self.pointer.direction = PointerDirection::Up;
                 }
             }
             // addition
@@ -347,10 +332,11 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             'g' => {
                 let y = self.stack.pop();
                 let x = self.stack.pop();
-                self.stack.push(i64::from(self.program.get(&Position {
-                    x: x as usize,
-                    y: y as usize,
-                }) as u8));
+                self.stack
+                    .push(i64::from(self.program.get(&PointerPosition {
+                        x: x as usize,
+                        y: y as usize,
+                    }) as u8));
             }
             // push
             'p' => {
@@ -358,7 +344,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
                 let x = self.stack.pop();
                 let v = self.stack.pop();
                 self.program.set(
-                    &Position {
+                    &PointerPosition {
                         x: x as usize,
                         y: y as usize,
                     },
@@ -384,8 +370,7 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
             }
             '@' => {
                 self.terminated = true;
-                self.instruction_count += 1;
-                return self;
+                return; // exit immediately (do not move the pointer when terminating)
             }
             c @ '0'..='9' => self.stack.push(i64::from(c.to_digit(10).unwrap())),
             ' ' => {}
@@ -393,24 +378,15 @@ impl<'input, 'output, O: Write> ProgramState<'input, 'output, O> {
         }
 
         move_pointer(&mut self.pointer);
-
-        self.instruction_count += 1;
-        self
-    }
-}
-
-impl<'input, 'output> ProgramState<'input, 'output, Vec<u8>> {
-    fn pop_output(&mut self) -> Option<u8> {
-        self.output.pop()
     }
 }
 
 fn move_pointer(pointer: &mut InstructionPointer) {
     match pointer.direction {
-        Direction::Up => pointer.position.y -= 1,
-        Direction::Down => pointer.position.y += 1,
-        Direction::Right => pointer.position.x += 1,
-        Direction::Left => pointer.position.x -= 1,
+        PointerDirection::Up => pointer.position.y -= 1,
+        PointerDirection::Down => pointer.position.y += 1,
+        PointerDirection::Right => pointer.position.x += 1,
+        PointerDirection::Left => pointer.position.x -= 1,
     }
 }
 
@@ -433,144 +409,123 @@ pub fn time<O: Write>(program_state: ProgramState<O>) {
     );
 }
 
-pub fn step(program: Program, delay: Duration) -> crossterm::Result<()> {
-    let mut stdin = io::stdin();
+pub fn step(program: Program) -> crossterm::Result<()> {
+    // setup terminal
+    enable_raw_mode()?;
     let mut stdout = io::stdout();
-    let mut stderr = io::stderr();
-    let mut streams = StepStreams::new(&mut stdin, &mut stdout, &mut stderr);
-    streams.init()?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    let mut input = io::stdin();
+    // create app and run it
+    let res = run_app(&mut terminal, program);
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
+}
+
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Result<()> {
+    let mut max_ips: u32 = 10;
+
+    let mut stdin = io::stdin();
     let mut output = Vec::new();
-    let mut program_state = ProgramState::new(program, false, &mut input, &mut output);
 
-    program.draw(&mut streams.output)?;
+    let mut program_state = ProgramState::new(program, false, &mut stdin, &mut output);
 
-    streams
-        .output
-        .queue(MoveToNextLine(2))?
-        .execute(SavePosition)?;
+    let mut last_tick = Instant::now();
+    let mut paused = false;
+    loop {
+        terminal.draw(|f| ui(f, &program_state))?;
 
-    let mut output_width: u16 = 0;
-    let (terminal_width, _terminal_rows) = crossterm::terminal::size().unwrap_or((80, 30));
+        let tick_rate = Duration::from_secs_f64(1.0 / (max_ips as f64));
 
-    while !program_state.terminated {
-        streams
-            .output
-            .queue(cursor::MoveTo(
-                (program_state.pointer.position.x + 1) as u16,
-                (program_state.pointer.position.y + 1) as u16,
-            ))?
-            .queue(style::PrintStyledContent(
-                program.get(&program_state.pointer.position).white(),
-            ))?;
-
-        program_state = program_state.step();
-
-        streams
-            .output
-            .queue(cursor::MoveTo(
-                (program_state.pointer.position.x + 1) as u16,
-                (program_state.pointer.position.y + 1) as u16,
-            ))?
-            .queue(style::PrintStyledContent(
-                program.get(&program_state.pointer.position).green(),
-            ))?;
-
-        if let Some(c) = program_state.pop_output() {
-            output_width += 1;
-            match c {
-                // newline
-                _ if output_width > terminal_width - 2 => {
-                    output_width = 0;
-                    streams
-                        .output
-                        .queue(RestorePosition)?
-                        .queue(style::PrintStyledContent("⏎".green()))?
-                        .queue(MoveToNextLine(1))?
-                        .queue(SavePosition)?
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+        if poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') => {
+                        return Ok(());
+                    }
+                    KeyCode::Char('r') => {
+                        program_state.reset();
+                        program_state.output.clear();
+                    }
+                    KeyCode::Char(' ') => paused = !paused,
+                    KeyCode::Char('+') => max_ips = (max_ips + 1).max(1),
+                    KeyCode::Char('-') => max_ips = (max_ips - 1).max(1),
+                    _ => {}
                 }
-                10 => {
-                    output_width = 0;
-                    streams
-                        .output
-                        .queue(RestorePosition)?
-                        .queue(MoveToNextLine(1))?
-                        .queue(SavePosition)?
-                }
-                _ => streams
-                    .output
-                    .queue(RestorePosition)?
-                    .queue(style::PrintStyledContent((c as char).white()))?
-                    .queue(SavePosition)?,
-            };
-        };
-
-        streams.output.flush()?;
-
-        if poll(delay)? {
-            if let Event::Key(KeyEvent {
-                modifiers: KeyModifiers::CONTROL,
-                code: KeyCode::Char('c'),
-            }) = read()?
-            {
-                return Ok(());
             }
         }
-    }
 
-    streams
-        .output
-        .queue(cursor::MoveTo(
-            (program_state.pointer.position.x + 1) as u16,
-            (program_state.pointer.position.y + 1) as u16,
-        ))?
-        .execute(style::PrintStyledContent(
-            program.get(&program_state.pointer.position).red(),
-        ))?;
-
-    loop {
-        if let Event::Key(KeyEvent {
-            modifiers: KeyModifiers::CONTROL,
-            code: KeyCode::Char('c'),
-        }) = read()?
-        {
-            return Ok(());
+        if last_tick.elapsed() >= tick_rate {
+            if !paused {
+                program_state.step();
+            }
+            last_tick = Instant::now();
         }
     }
 }
 
-pub struct StepStreams<'input, 'output, 'error> {
-    _input: &'input mut dyn Read,
-    output: &'output mut dyn Write,
-    _error: &'error mut dyn Write,
-}
+fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ProgramState<Vec<u8>>) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
+        .split(f.size());
 
-impl<'input, 'output, 'error> StepStreams<'input, 'output, 'error> {
-    fn new(
-        input: &'input mut dyn Read,
-        output: &'output mut dyn Write,
-        error: &'error mut dyn Write,
-    ) -> Self {
-        StepStreams {
-            _input: input,
-            output,
-            _error: error,
-        }
-    }
+    let program_grid = Table::new(program_state.program.0.iter().enumerate().map(|(y, row)| {
+        Row::new(row.iter().enumerate().map(|(x, c)| {
+            Cell::from(c.to_string()).style(
+                if program_state.pointer.position.x == x && program_state.pointer.position.y == y {
+                    if program_state.terminated {
+                        Style::default().bg(Color::Red)
+                    } else {
+                        Style::default().bg(Color::Green)
+                    }
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            )
+        }))
+    }))
+    .block(
+        Block::default()
+            .title(" Program ")
+            .title_alignment(Alignment::Center)
+            .borders(Borders::ALL),
+    )
+    .style(Style::default().fg(Color::White).bg(Color::Black))
+    .widths(&[Constraint::Length(1); 30])
+    .column_spacing(0);
 
-    fn init(&mut self) -> crossterm::Result<()> {
-        self.output.execute(EnterAlternateScreen)?;
-        enable_raw_mode()?;
-        Ok(())
-    }
-}
+    let o = std::str::from_utf8(program_state.output).unwrap();
+    let output = Paragraph::new(o)
+        .block(
+            Block::default()
+                .title(" Output ")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL),
+        )
+        .style(Style::default().fg(Color::White).bg(Color::Black))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
 
-impl<'input, 'output, 'error> Drop for StepStreams<'input, 'output, 'error> {
-    fn drop(&mut self) {
-        self.output.execute(LeaveAlternateScreen).unwrap();
-        disable_raw_mode().unwrap();
-    }
+    f.render_widget(program_grid, chunks[0]);
+    f.render_widget(output, chunks[1]);
 }
 
 #[cfg(test)]
@@ -580,7 +535,7 @@ mod tests {
 
     use crate::{Program, ProgramState};
 
-    const HELLO_WORLD: &'static str = r#"64+"!dlroW ,olleH">:#,_@"#;
+    const HELLO_WORLD: &str = r#"64+"!dlroW ,olleH">:#,_@"#;
 
     #[test]
     fn hello_world() -> Result<(), io::Error> {
@@ -594,7 +549,7 @@ mod tests {
         Ok(())
     }
 
-    const SIEVE_OF_ERATOSTHENES: &'static str = r#"2>:3g" "-!v\  g30          <
+    const SIEVE_OF_ERATOSTHENES: &str = r#"2>:3g" "-!v\  g30          <
  |!`"O":+1_:.:03p>03g+:"O"`|
  @               ^  p3\" ":<
 2 234567890123456789012345678901234567890123456789012345678901234567890123456789
@@ -615,7 +570,7 @@ mod tests {
         Ok(())
     }
 
-    const QUINE: &'static str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
+    const QUINE: &str = r#"01->1# +# :# 0# g# ,# :# 5# 8# *# 4# +# -# _@"#;
 
     #[test]
     fn quine() -> Result<(), io::Error> {

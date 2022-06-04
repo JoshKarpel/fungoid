@@ -2,7 +2,6 @@ extern crate clap;
 extern crate fungoid;
 
 use std::io;
-use std::time::Duration;
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -40,19 +39,11 @@ fn _main() -> MainError {
                 ),
         )
         .subcommand(
-            Command::new("step")
-                .arg(
-                    Arg::new("rate")
-                        .long("rate")
-                        .takes_value(true)
-                        .default_value("10")
-                        .help("maximum instructions per second"),
-                )
-                .arg(
-                    Arg::new("FILE")
-                        .help("file to read program from")
-                        .required(true),
-                ),
+            Command::new("step").arg(
+                Arg::new("FILE")
+                    .help("file to read program from")
+                    .required(true),
+            ),
         )
         .get_matches();
 
@@ -68,13 +59,7 @@ fn _main() -> MainError {
 fn step(matches: &ArgMatches) -> MainError {
     let program = fungoid::Program::from_file(matches.value_of("FILE").unwrap())?;
 
-    let max_ips: u32 = matches.value_of("rate").unwrap().parse()?;
-    let dur = Duration::from_secs_f64(match max_ips {
-        0 => 0.0,
-        _ => 1.0 / (max_ips as f64),
-    });
-
-    fungoid::step(program, dur)?;
+    fungoid::step(program)?;
 
     Ok(())
 }

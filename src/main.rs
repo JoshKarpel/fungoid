@@ -57,15 +57,15 @@ fn _main() -> MainError {
 }
 
 fn step(matches: &ArgMatches) -> MainError {
-    let program = fungoid::Program::from_file(matches.value_of("FILE").unwrap())?;
+    let program = fungoid::program::Program::from_file(matches.value_of("FILE").unwrap())?;
 
-    fungoid::step(program)?;
+    fungoid::step::step(program)?;
 
     Ok(())
 }
 
 fn run(matches: &ArgMatches) -> MainError {
-    let program = fungoid::Program::from_file(matches.value_of("FILE").unwrap())?;
+    let program = fungoid::program::Program::from_file(matches.value_of("FILE").unwrap())?;
 
     if matches.is_present("show") {
         program.show();
@@ -73,8 +73,12 @@ fn run(matches: &ArgMatches) -> MainError {
 
     let input = &mut io::stdin();
     let output = &mut io::stdout();
-    let program_state =
-        fungoid::ProgramState::new(program, matches.is_present("trace"), input, output);
+    let program_state = fungoid::execution::ExecutionState::new(
+        program,
+        matches.is_present("trace"),
+        input,
+        output,
+    );
 
     if matches.is_present("time") {
         fungoid::time(program_state);

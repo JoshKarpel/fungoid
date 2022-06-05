@@ -71,8 +71,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
 
     let mut stdin = io::stdin();
     let mut output = Vec::new();
-
-    let mut program_state = ExecutionState::new(program, false, &mut stdin, &mut output);
+    let mut program_state = ExecutionState::new(program.clone(), false, &mut stdin, &mut output);
 
     let mut last_tick = Instant::now();
 
@@ -93,7 +92,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
                         return Ok(());
                     }
                     KeyCode::Char('r') => {
+                        // TODO: figure out a cleaner way to handle "execute from scratch"
                         program_state.reset();
+                        program_state.program = program.clone();
                         program_state.output.clear();
                     }
                     KeyCode::Char(' ') => ide_state.paused = !ide_state.paused,
@@ -171,9 +172,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide
     let output_area = lower_chunks[0];
     let state_area = lower_chunks[1];
 
-    let pointer_position = program_state.pointer.position;
-    let terminated = program_state.terminated;
-
     let w = program_area.width as isize;
     let h = program_area.height as isize;
 
@@ -197,8 +195,8 @@ fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide
             .into_iter()
             .map(|(_, row)| {
                 Row::new(row.map(|(p, c)| {
-                    let style = if p == &pointer_position {
-                        if terminated {
+                    let style = if p == &program_state.pointer.position {
+                        if program_state.terminated {
                             Style::default().bg(Color::Red)
                         } else {
                             Style::default().bg(Color::Green)

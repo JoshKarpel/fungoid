@@ -43,7 +43,7 @@ impl InstructionPointer {
 }
 
 #[derive(Debug)]
-struct Stack(Vec<isize>);
+pub struct Stack(Vec<isize>);
 
 impl Stack {
     fn new() -> Stack {
@@ -59,19 +59,22 @@ impl Stack {
     }
 
     fn join(&self, sep: &str) -> String {
-        return self
-            .0
+        self.0
             .iter()
             .map(|x| x.to_string())
             .collect::<Vec<String>>()
-            .join(sep);
+            .join(sep)
+    }
+
+    pub fn items(&self) -> Vec<isize> {
+        self.0.clone()
     }
 }
 
 pub struct ExecutionState<'input, 'output, O: Write> {
     pub program: Program,
     pub pointer: InstructionPointer,
-    stack: Stack,
+    pub stack: Stack,
     rng: ThreadRng,
     pub terminated: bool,
     string_mode: bool,
@@ -286,8 +289,8 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
 
 fn move_pointer(pointer: &mut InstructionPointer) {
     match pointer.direction {
-        PointerDirection::Up => pointer.position.y += 1,
-        PointerDirection::Down => pointer.position.y -= 1,
+        PointerDirection::Up => pointer.position.y -= 1,
+        PointerDirection::Down => pointer.position.y += 1,
         PointerDirection::Right => pointer.position.x += 1,
         PointerDirection::Left => pointer.position.x -= 1,
     }

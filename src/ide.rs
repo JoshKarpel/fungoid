@@ -15,6 +15,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{List, ListItem},
     Frame, Terminal,
 };
 
@@ -49,6 +50,22 @@ pub fn ide(program: Program) -> crossterm::Result<()> {
     Ok(())
 }
 
+struct IDEState {
+    paused: bool,
+    follow: bool,
+    view_center: Position,
+}
+
+impl IDEState {
+    fn new() -> Self {
+        IDEState {
+            paused: false,
+            follow: false,
+            view_center: Position { x: 0, y: 0 },
+        }
+    }
+}
+
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Result<()> {
     let mut max_ips: u32 = 10;
 
@@ -59,12 +76,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
 
     let mut last_tick = Instant::now();
 
-    let mut paused = false;
-    let mut follow = false;
-    let mut view_center = Position { x: 0, y: 0 };
+    let mut ide_state = IDEState::new();
 
     loop {
-        terminal.draw(|f| ui(f, &program_state, &view_center))?;
+        terminal.draw(|f| ui(f, &program_state, &ide_state))?;
 
         let tick_rate = Duration::from_secs_f64(1.0 / (max_ips as f64));
 
@@ -81,37 +96,41 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
                         program_state.reset();
                         program_state.output.clear();
                     }
-                    KeyCode::Char(' ') => paused = !paused,
-                    KeyCode::Char('f') => follow = !follow,
+                    KeyCode::Char(' ') => ide_state.paused = !ide_state.paused,
+                    KeyCode::Char('t') => {
+                        ide_state.paused = true;
+                        program_state.step();
+                    }
+                    KeyCode::Char('f') => ide_state.follow = !ide_state.follow,
                     KeyCode::Char('+') => max_ips = (max_ips + 1).max(1),
                     KeyCode::Char('-') => max_ips = (max_ips - 1).max(1),
                     KeyCode::Left => {
-                        view_center = Position {
-                            x: view_center.x - 1,
-                            y: view_center.y,
+                        ide_state.view_center = Position {
+                            x: ide_state.view_center.x - 1,
+                            y: ide_state.view_center.y,
                         };
-                        follow = false;
+                        ide_state.follow = false;
                     }
                     KeyCode::Right => {
-                        view_center = Position {
-                            x: view_center.x + 1,
-                            y: view_center.y,
+                        ide_state.view_center = Position {
+                            x: ide_state.view_center.x + 1,
+                            y: ide_state.view_center.y,
                         };
-                        follow = false;
+                        ide_state.follow = false;
                     }
                     KeyCode::Up => {
-                        view_center = Position {
-                            x: view_center.x,
-                            y: view_center.y + 1,
+                        ide_state.view_center = Position {
+                            x: ide_state.view_center.x,
+                            y: ide_state.view_center.y - 1,
                         };
-                        follow = false;
+                        ide_state.follow = false;
                     }
                     KeyCode::Down => {
-                        view_center = Position {
-                            x: view_center.x,
-                            y: view_center.y - 1,
+                        ide_state.view_center = Position {
+                            x: ide_state.view_center.x,
+                            y: ide_state.view_center.y + 1,
                         };
-                        follow = false;
+                        ide_state.follow = false;
                     }
                     _ => {}
                 }
@@ -119,10 +138,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
         }
 
         if last_tick.elapsed() >= tick_rate {
-            if !paused {
+            if !ide_state.paused {
                 program_state.step();
-                if follow {
-                    view_center = program_state.pointer.position
+                if ide_state.follow {
+                    ide_state.view_center = program_state.pointer.position
                 }
             }
             last_tick = Instant::now();
@@ -130,29 +149,41 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
     }
 }
 
-fn ui<B: Backend>(
-    f: &mut Frame<B>,
-    program_state: &ExecutionState<Vec<u8>>,
-    view_center: &Position,
-) {
+fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide_state: &IDEState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
         .split(f.size());
+    let upper = chunks[0];
+    let lower = chunks[1];
+
+    let upper_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
+        .split(upper);
+    let program_area = upper_chunks[0];
+    let stack_area = upper_chunks[1];
+
+    let lower_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
+        .split(lower);
+    let output_area = lower_chunks[0];
+    let state_area = lower_chunks[1];
 
     let pointer_position = program_state.pointer.position;
     let terminated = program_state.terminated;
 
-    let w = chunks[0].width as isize;
-    let h = chunks[0].height as isize;
+    let w = program_area.width as isize;
+    let h = program_area.height as isize;
 
     let upper_left = Position {
-        x: view_center.x - w / 2,
-        y: view_center.y + h / 2,
+        x: ide_state.view_center.x - w / 2,
+        y: ide_state.view_center.y - h / 2,
     };
     let lower_right = Position {
         x: upper_left.x + w,
-        y: upper_left.y - h,
+        y: upper_left.y + h,
     };
 
     let widths = vec![Constraint::Length(1); w as usize];
@@ -172,7 +203,7 @@ fn ui<B: Backend>(
                         } else {
                             Style::default().bg(Color::Green)
                         }
-                    } else if p == view_center {
+                    } else if p == &ide_state.view_center {
                         Style::default().bg(Color::LightMagenta)
                     } else {
                         Style::default()
@@ -183,13 +214,32 @@ fn ui<B: Backend>(
     )
     .block(
         Block::default()
-            .title(" Program ")
+            .title(format!(
+                " Program | (x, y) = ({}, {}) ",
+                ide_state.view_center.x, ide_state.view_center.y
+            ))
             .title_alignment(Alignment::Center)
             .borders(Borders::ALL),
     )
     .style(Style::default().fg(Color::White).bg(Color::Black))
     .widths(&*widths)
     .column_spacing(0);
+
+    let stack = List::new(
+        program_state
+            .stack
+            .items()
+            .iter()
+            .map(|i| ListItem::new(i.to_string()))
+            .collect_vec(),
+    )
+    .block(
+        Block::default()
+            .title(" Stack ")
+            .title_alignment(Alignment::Center)
+            .borders(Borders::ALL),
+    )
+    .style(Style::default().fg(Color::White));
 
     let o = std::str::from_utf8(program_state.output).unwrap();
     let output = Paragraph::new(o)
@@ -201,8 +251,26 @@ fn ui<B: Backend>(
         )
         .style(Style::default().fg(Color::White).bg(Color::Black))
         .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: false });
 
-    f.render_widget(program_grid, chunks[0]);
-    f.render_widget(output, chunks[1]);
+    let mut settings = vec![];
+    if ide_state.paused {
+        settings.push(ListItem::new("paused"));
+    }
+    if ide_state.follow {
+        settings.push(ListItem::new("following"));
+    }
+    let state = List::new(settings)
+        .block(
+            Block::default()
+                .title(" IDE ")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL),
+        )
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(program_grid, program_area);
+    f.render_widget(stack, stack_area);
+    f.render_widget(output, output_area);
+    f.render_widget(state, state_area);
 }

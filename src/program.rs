@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-use std::{fs::File, io, io::Read, str::FromStr};
+use std::{collections::HashMap, fs::File, io, io::Read, str::FromStr};
 
-use itertools::{Itertools, MinMaxResult};
+use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct Program(HashMap<Position, char>);
@@ -33,23 +32,8 @@ impl Program {
         Program::from_str(&contents)
     }
 
-    pub fn chars(&self) -> Vec<(Position, char)> {
-        match self.0.keys().minmax() {
-            MinMaxResult::NoElements => vec![],
-            MinMaxResult::OneElement(p) => vec![(*p, self.get(p))],
-            MinMaxResult::MinMax(upper_left, lower_right) => (upper_left.y..=lower_right.y)
-                .cartesian_product(upper_left.x..=lower_right.x)
-                .map(|(y, x)| {
-                    let p = Position { x, y };
-                    (p, self.get(&p))
-                })
-                .collect(),
-        }
-    }
-
     pub fn view(&self, upper_left: &Position, lower_right: &Position) -> Vec<(Position, char)> {
-        (lower_right.y..=upper_left.y)
-            .rev()
+        (upper_left.y..=lower_right.y)
             .cartesian_product(upper_left.x..=lower_right.x)
             .map(move |(y, x)| {
                 let p = Position { x, y };
@@ -70,7 +54,7 @@ impl FromStr for Program {
                 program.set(
                     &Position {
                         x: x as isize,
-                        y: -(y as isize),
+                        y: y as isize,
                     },
                     c,
                 );

@@ -15,12 +15,21 @@ jobs:
       fail-fast: false
       matrix:
         platform: [ ubuntu-latest, macos-latest, windows-latest ]
+        toolchain: [ stable ]
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - uses: actions/checkout@v3.0.2
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
+      - uses: actions-rs/toolchain@v1.0.6
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+      - uses: actions-rs/cargo@v1.0.1
+        with:
+          command: build
+          args: --verbose --release
+      - uses: actions-rs/cargo@v1.0.1
+        with:
+          command: test
+          args: --verbose --release

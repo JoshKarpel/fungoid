@@ -52,21 +52,23 @@ pub fn ide(program: Program) -> crossterm::Result<()> {
 
 struct IDEState {
     paused: bool,
-    follow: bool,
+    following: bool,
+    editing: bool,
     view_center: Position,
 }
 
 impl IDEState {
     fn new() -> Self {
         IDEState {
-            paused: false,
-            follow: false,
+            paused: true,
+            following: false,
+            editing: false,
             view_center: Position { x: 0, y: 0 },
         }
     }
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
     let mut max_ips: u32 = 10;
 
     let mut stdin = io::stdin();
@@ -88,6 +90,21 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
         if poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
+                    KeyCode::Char('i') if !ide_state.editing => {
+                        ide_state.paused = true;
+                        ide_state.editing = true;
+
+                        program_state.reset();
+                        program_state.program = program.clone();
+                        program_state.output.clear();
+                    }
+                    KeyCode::Esc if ide_state.editing => {
+                        ide_state.editing = false;
+                    }
+                    KeyCode::Char(c) if ide_state.editing => {
+                        program.set(&ide_state.view_center, c);
+                        program_state.program = program.clone();
+                    }
                     KeyCode::Char('q') => {
                         return Ok(());
                     }
@@ -97,12 +114,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
                         program_state.program = program.clone();
                         program_state.output.clear();
                     }
-                    KeyCode::Char(' ') => ide_state.paused = !ide_state.paused,
-                    KeyCode::Char('t') => {
+                    KeyCode::Char(' ') if !ide_state.editing => {
+                        ide_state.paused = !ide_state.paused
+                    }
+                    KeyCode::Char('t') if !ide_state.editing => {
                         ide_state.paused = true;
                         program_state.step();
                     }
-                    KeyCode::Char('f') => ide_state.follow = !ide_state.follow,
+                    KeyCode::Char('f') => ide_state.following = !ide_state.following,
                     KeyCode::Char('+') => max_ips = (max_ips + 1).max(1),
                     KeyCode::Char('-') => max_ips = (max_ips - 1).max(1),
                     KeyCode::Left => {
@@ -110,28 +129,28 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
                             x: ide_state.view_center.x - 1,
                             y: ide_state.view_center.y,
                         };
-                        ide_state.follow = false;
+                        ide_state.following = false;
                     }
                     KeyCode::Right => {
                         ide_state.view_center = Position {
                             x: ide_state.view_center.x + 1,
                             y: ide_state.view_center.y,
                         };
-                        ide_state.follow = false;
+                        ide_state.following = false;
                     }
                     KeyCode::Up => {
                         ide_state.view_center = Position {
                             x: ide_state.view_center.x,
                             y: ide_state.view_center.y - 1,
                         };
-                        ide_state.follow = false;
+                        ide_state.following = false;
                     }
                     KeyCode::Down => {
                         ide_state.view_center = Position {
                             x: ide_state.view_center.x,
                             y: ide_state.view_center.y + 1,
                         };
-                        ide_state.follow = false;
+                        ide_state.following = false;
                     }
                     _ => {}
                 }
@@ -141,7 +160,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, program: Program) -> io::Resu
         if last_tick.elapsed() >= tick_rate {
             if !ide_state.paused {
                 program_state.step();
-                if ide_state.follow {
+                if ide_state.following {
                     ide_state.view_center = program_state.pointer.position
                 }
             }
@@ -252,10 +271,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide
         .wrap(Wrap { trim: false });
 
     let mut settings = vec![];
+    if ide_state.editing {
+        settings.push(ListItem::new("editing"));
+    }
     if ide_state.paused {
         settings.push(ListItem::new("paused"));
     }
-    if ide_state.follow {
+    if ide_state.following {
         settings.push(ListItem::new("following"));
     }
     let state = List::new(settings)

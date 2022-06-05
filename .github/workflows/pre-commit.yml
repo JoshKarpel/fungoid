@@ -8,8 +8,18 @@ on:
 
 jobs:
   pre-commit:
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [ stable ]
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3.0.2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
       - uses: actions/setup-python@v3.1.2
       - uses: pre-commit/action@v2.0.3

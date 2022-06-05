@@ -25,11 +25,11 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           override: true
-      - uses: actions-rs/cargo@v1.0.1
+      - uses: actions-rs/cargo@v1.0.3
         with:
           command: build
           args: --verbose --release
-      - uses: actions-rs/cargo@v1.0.1
+      - uses: actions-rs/cargo@v1.0.3
         with:
           command: test
           args: --verbose --release

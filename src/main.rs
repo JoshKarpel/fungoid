@@ -21,25 +21,27 @@ fn _main() -> MainError {
         .about("A Befunge interpreter written in Rust")
         .subcommand(
             Command::new("run")
-                .arg(Arg::new("time").long("time").help("enable timing"))
+                .about("Execute a program")
+                .arg(Arg::new("profile").long("profile").help("Enable profiling"))
                 .arg(
                     Arg::new("trace")
                         .long("trace")
-                        .help("trace program execution"),
+                        .help("Trace program execution"),
                 )
                 .arg(
                     Arg::new("FILE")
-                        .help("file to read program from")
+                        .help("The file to read the program from")
                         .required(true),
                 ),
         )
         .subcommand(
-            Command::new("ide").arg(
+            Command::new("ide").about("Start a TUI IDE").arg(
                 Arg::new("FILE")
-                    .help("file to read program from")
+                    .help("The file to read the program from")
                     .required(true),
             ),
         )
+        .arg_required_else_help(true)
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("ide") {

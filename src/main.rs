@@ -9,6 +9,7 @@ use std::{
 
 use clap::{Arg, ArgMatches, Command};
 use humantime::format_duration;
+use itertools::Itertools;
 use separator::Separatable;
 
 use fungoid::examples::EXAMPLES;
@@ -26,7 +27,7 @@ type MainError = Result<(), Box<dyn std::error::Error>>;
 
 fn _main() -> MainError {
     let matches = Command::new("fungoid")
-        .version("0.2.0")
+        .version("0.2.1")
         .author("Josh Karpel <josh.karpel@gmail.com>")
         .about("A Befunge interpreter written in Rust")
         .subcommand(
@@ -51,6 +52,9 @@ fn _main() -> MainError {
                     .required(true),
             ),
         )
+        .subcommand(
+            Command::new("examples").about("Print the names of the bundled example programs."),
+        )
         .arg_required_else_help(true)
         .get_matches();
 
@@ -58,6 +62,8 @@ fn _main() -> MainError {
         ide(matches)?;
     } else if let Some(matches) = matches.subcommand_matches("run") {
         run_program(matches)?;
+    } else if matches.subcommand_matches("examples").is_some() {
+        println!("{}", EXAMPLES.keys().sorted().join("\n"))
     }
 
     Ok(())

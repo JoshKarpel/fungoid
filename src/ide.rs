@@ -20,6 +20,7 @@ use tui::{
 };
 
 use crate::execution::ExecutionState;
+use crate::ide::HandleKeyResut::{Continue, Quit};
 use crate::program::Program;
 use crate::Position;
 
@@ -51,6 +52,7 @@ pub fn ide(program: Program) -> crossterm::Result<()> {
 }
 
 struct IDEState {
+    instructions_per_second: usize,
     paused: bool,
     following: bool,
     editing: bool,
@@ -60,113 +62,155 @@ struct IDEState {
 impl IDEState {
     fn new() -> Self {
         IDEState {
+            instructions_per_second: 10,
             paused: true,
             following: false,
             editing: false,
             view_center: Position { x: 0, y: 0 },
         }
     }
+
+    fn tick_time(&self) -> Duration {
+        Duration::from_secs_f64(1.0 / (self.instructions_per_second as f64))
+    }
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
-    let mut max_ips: u32 = 10;
-
     let mut stdin = io::stdin();
     let mut output = Vec::new();
-    let mut program_state = ExecutionState::new(program.clone(), false, &mut stdin, &mut output);
+    let mut execution_state = ExecutionState::new(program.clone(), false, &mut stdin, &mut output);
 
     let mut last_tick = Instant::now();
 
     let mut ide_state = IDEState::new();
 
     loop {
-        terminal.draw(|f| ui(f, &program_state, &ide_state))?;
+        terminal.draw(|f| ui(f, &execution_state, &ide_state))?;
 
-        let tick_rate = Duration::from_secs_f64(1.0 / (max_ips as f64));
+        let tick_time = ide_state.tick_time();
 
-        let timeout = tick_rate
+        let time_to_next_tick = tick_time
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
-        if poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('i') if !ide_state.editing => {
-                        ide_state.paused = true;
-                        ide_state.editing = true;
 
-                        program_state.reset();
-                        program_state.program = program.clone();
-                        program_state.output.clear();
-                    }
-                    KeyCode::Esc if ide_state.editing => {
-                        ide_state.editing = false;
-                    }
-                    KeyCode::Char(c) if ide_state.editing => {
-                        program.set(&ide_state.view_center, c);
-                        program_state.program = program.clone();
-                    }
-                    KeyCode::Char('q') => {
-                        return Ok(());
-                    }
-                    KeyCode::Char('r') => {
-                        // TODO: figure out a cleaner way to handle "execute from scratch"
-                        program_state.reset();
-                        program_state.program = program.clone();
-                        program_state.output.clear();
-                    }
-                    KeyCode::Char(' ') if !ide_state.editing => {
-                        ide_state.paused = !ide_state.paused
-                    }
-                    KeyCode::Char('t') if !ide_state.editing => {
-                        ide_state.paused = true;
-                        program_state.step();
-                    }
-                    KeyCode::Char('f') => ide_state.following = !ide_state.following,
-                    KeyCode::Char('+') => max_ips = (max_ips + 1).max(1),
-                    KeyCode::Char('-') => max_ips = (max_ips - 1).max(1),
-                    KeyCode::Left => {
-                        ide_state.view_center = Position {
-                            x: ide_state.view_center.x - 1,
-                            y: ide_state.view_center.y,
-                        };
-                        ide_state.following = false;
-                    }
-                    KeyCode::Right => {
-                        ide_state.view_center = Position {
-                            x: ide_state.view_center.x + 1,
-                            y: ide_state.view_center.y,
-                        };
-                        ide_state.following = false;
-                    }
-                    KeyCode::Up => {
-                        ide_state.view_center = Position {
-                            x: ide_state.view_center.x,
-                            y: ide_state.view_center.y - 1,
-                        };
-                        ide_state.following = false;
-                    }
-                    KeyCode::Down => {
-                        ide_state.view_center = Position {
-                            x: ide_state.view_center.x,
-                            y: ide_state.view_center.y + 1,
-                        };
-                        ide_state.following = false;
-                    }
-                    _ => {}
-                }
+        if poll(time_to_next_tick)? {
+            if let Quit = handle_key(
+                event::read()?,
+                &mut ide_state,
+                &mut execution_state,
+                &mut program,
+            ) {
+                return Ok(());
             }
         }
 
-        if last_tick.elapsed() >= tick_rate {
-            if !ide_state.paused {
-                program_state.step();
-                if ide_state.following {
-                    ide_state.view_center = program_state.pointer.position
-                }
+        // When handling input, we might not wait the whole poll() above, so check to see if we should tick.
+        if last_tick.elapsed() >= tick_time {
+            if let Quit = handle_tick(&mut ide_state, &mut execution_state, &mut program) {
+                return Ok(());
             }
             last_tick = Instant::now();
         }
     }
+}
+
+enum HandleKeyResut {
+    Continue,
+    Quit,
+}
+
+fn handle_key(
+    event: Event,
+    ide_state: &mut IDEState,
+    execution_state: &mut ExecutionState<Vec<u8>>,
+    program: &mut Program,
+) -> HandleKeyResut {
+    if let Event::Key(key) = event {
+        match key.code {
+            KeyCode::Char('i') if !ide_state.editing => {
+                ide_state.paused = true;
+                ide_state.editing = true;
+
+                execution_state.reset();
+                execution_state.program = program.clone();
+                execution_state.output.clear();
+            }
+            KeyCode::Esc if ide_state.editing => {
+                ide_state.editing = false;
+            }
+            KeyCode::Char(c) if ide_state.editing => {
+                program.set(&ide_state.view_center, c);
+                execution_state.program = program.clone();
+            }
+            KeyCode::Char('q') => {
+                return Quit;
+            }
+            KeyCode::Char('r') => {
+                // TODO: figure out a cleaner way to handle "execute from scratch"
+                execution_state.reset();
+                execution_state.program = program.clone();
+                execution_state.output.clear();
+            }
+            KeyCode::Char(' ') if !ide_state.editing => ide_state.paused = !ide_state.paused,
+            KeyCode::Char('t') if !ide_state.editing => {
+                ide_state.paused = true;
+                execution_state.step();
+            }
+            KeyCode::Char('f') => ide_state.following = !ide_state.following,
+            KeyCode::Char('+') => {
+                ide_state.instructions_per_second = (ide_state.instructions_per_second + 1).max(1)
+            }
+            KeyCode::Char('-') => {
+                ide_state.instructions_per_second = (ide_state.instructions_per_second - 1).max(1)
+            }
+            KeyCode::Left => {
+                ide_state.view_center = Position {
+                    x: ide_state.view_center.x - 1,
+                    y: ide_state.view_center.y,
+                };
+                ide_state.following = false;
+            }
+            KeyCode::Right => {
+                ide_state.view_center = Position {
+                    x: ide_state.view_center.x + 1,
+                    y: ide_state.view_center.y,
+                };
+                ide_state.following = false;
+            }
+            KeyCode::Up => {
+                ide_state.view_center = Position {
+                    x: ide_state.view_center.x,
+                    y: ide_state.view_center.y - 1,
+                };
+                ide_state.following = false;
+            }
+            KeyCode::Down => {
+                ide_state.view_center = Position {
+                    x: ide_state.view_center.x,
+                    y: ide_state.view_center.y + 1,
+                };
+                ide_state.following = false;
+            }
+            _ => {}
+        }
+    }
+
+    Continue
+}
+
+fn handle_tick(
+    ide_state: &mut IDEState,
+    execution_state: &mut ExecutionState<Vec<u8>>,
+    _program: &mut Program,
+) -> HandleKeyResut {
+    if !ide_state.paused {
+        execution_state.step();
+        if ide_state.following {
+            ide_state.view_center = execution_state.pointer.position
+        }
+    }
+
+    Continue
 }
 
 fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide_state: &IDEState) {

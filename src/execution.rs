@@ -6,7 +6,7 @@ use rand::distributions::{Distribution, Standard};
 use rand::prelude::ThreadRng;
 use rand::{thread_rng, Rng};
 
-use crate::{Position, Program};
+use crate::program::{Position, Program};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PointerDirection {
@@ -71,7 +71,7 @@ impl Stack {
     }
 }
 
-pub struct ExecutionState<'input, 'output, O: Write> {
+pub struct ExecutionState<R: Read, O: Write> {
     pub program: Program,
     pub pointer: InstructionPointer,
     pub stack: Stack,
@@ -80,17 +80,12 @@ pub struct ExecutionState<'input, 'output, O: Write> {
     string_mode: bool,
     trace: bool,
     pub instruction_count: u64,
-    input: &'input mut dyn Read,
-    pub output: &'output mut O,
+    pub input: R,
+    pub output: O,
 }
 
-impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
-    pub fn new(
-        program: Program,
-        trace: bool,
-        input: &'input mut dyn Read,
-        output: &'output mut O,
-    ) -> Self {
+impl<R: Read, O: Write> ExecutionState<R, O> {
+    pub fn new(program: Program, trace: bool, input: R, output: O) -> Self {
         ExecutionState {
             program,
             pointer: InstructionPointer::new(),
@@ -114,12 +109,10 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
         self.instruction_count = 0;
     }
 
-    pub fn run(mut self) -> Self {
+    pub fn run(&mut self) {
         while !self.terminated {
             self.step();
         }
-
-        self
     }
 
     fn trace(&self) {
@@ -258,6 +251,7 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
                 self.program.set(&Position { x, y }, v as u8 as char);
             }
             // get int from user
+            // TODO: does not actually work from stdin
             '&' => {
                 let mut input = String::new();
                 self.input
@@ -266,6 +260,7 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
                 self.stack.push(input.trim().parse::<isize>().unwrap());
             }
             // get char from user
+            // TODO: does not actually work from stdin
             '~' => {
                 let mut input = String::new();
                 self.input
@@ -293,5 +288,80 @@ fn move_pointer(pointer: &mut InstructionPointer) {
         PointerDirection::Down => pointer.position.y += 1,
         PointerDirection::Right => pointer.position.x += 1,
         PointerDirection::Left => pointer.position.x -= 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::str::FromStr;
+
+    use crate::examples::{FACTORIAL, QUINE};
+    use crate::execution::ExecutionState;
+    use crate::program::Program;
+
+    const HELLO_WORLD: &str = r#"64+"!dlroW ,olleH">:#,_@"#;
+
+    #[test]
+    fn hello_world() -> Result<(), io::Error> {
+        let program = Program::from_str(HELLO_WORLD)?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run();
+        assert_eq!(
+            "Hello, World!\n",
+            String::from_utf8(execution.output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    const SIEVE_OF_ERATOSTHENES: &str = r#"2>:3g" "-!v\  g30          <
+ |!`"O":+1_:.:03p>03g+:"O"`|
+ @               ^  p3\" ":<
+2 234567890123456789012345678901234567890123456789012345678901234567890123456789
+"#;
+
+    #[test]
+    fn sieve_of_eratosthenes() -> Result<(), io::Error> {
+        let program = Program::from_str(SIEVE_OF_ERATOSTHENES)?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run();
+        assert_eq!(
+            "2357111317192329313741434753596167717379",
+            String::from_utf8(execution.output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn quine() -> Result<(), io::Error> {
+        let program = Program::from_str(QUINE)?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run();
+        assert_eq!(
+            QUINE.trim_end(),
+            String::from_utf8(execution.output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn factorial() -> Result<(), io::Error> {
+        let program = Program::from_str(FACTORIAL)?;
+        let input = ["5".chars().next().unwrap() as u8];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run();
+        assert_eq!("120", String::from_utf8(execution.output).unwrap());
+
+        Ok(())
     }
 }

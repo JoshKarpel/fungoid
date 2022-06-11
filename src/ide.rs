@@ -21,8 +21,7 @@ use tui::{
 
 use crate::execution::ExecutionState;
 use crate::ide::HandleKeyResut::{Continue, Quit};
-use crate::program::Program;
-use crate::Position;
+use crate::program::{Position, Program};
 
 pub fn ide(program: Program) -> crossterm::Result<()> {
     // setup terminal
@@ -76,9 +75,9 @@ impl IDEState {
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
-    let mut stdin = io::stdin();
-    let mut output = Vec::new();
-    let mut execution_state = ExecutionState::new(program.clone(), false, &mut stdin, &mut output);
+    let input = Vec::new();
+    let output = Vec::new();
+    let mut execution_state = ExecutionState::new(program.clone(), false, input.as_slice(), output);
 
     let mut last_tick = Instant::now();
 
@@ -122,7 +121,7 @@ enum HandleKeyResut {
 fn handle_key(
     event: Event,
     ide_state: &mut IDEState,
-    execution_state: &mut ExecutionState<Vec<u8>>,
+    execution_state: &mut ExecutionState<&[u8], Vec<u8>>,
     program: &mut Program,
 ) -> HandleKeyResut {
     if let Event::Key(key) = event {
@@ -200,7 +199,7 @@ fn handle_key(
 
 fn handle_tick(
     ide_state: &mut IDEState,
-    execution_state: &mut ExecutionState<Vec<u8>>,
+    execution_state: &mut ExecutionState<&[u8], Vec<u8>>,
     _program: &mut Program,
 ) -> HandleKeyResut {
     if !ide_state.paused {
@@ -213,7 +212,11 @@ fn handle_tick(
     Continue
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide_state: &IDEState) {
+fn ui<B: Backend>(
+    f: &mut Frame<B>,
+    program_state: &ExecutionState<&[u8], Vec<u8>>,
+    ide_state: &IDEState,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
@@ -302,7 +305,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, program_state: &ExecutionState<Vec<u8>>, ide
     )
     .style(Style::default().fg(Color::White));
 
-    let o = std::str::from_utf8(program_state.output).unwrap();
+    let o = std::str::from_utf8(&program_state.output).unwrap();
     let output = Paragraph::new(o)
         .block(
             Block::default()

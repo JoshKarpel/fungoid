@@ -36,4 +36,4 @@ jobs:
         uses: actions-rs/cargo@v1.0.3
         with:
           command: test
-          args: --verbose --no-fail-fastp
+          args: --verbose --no-fail-fast

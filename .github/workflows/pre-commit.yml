@@ -22,11 +22,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3.0.2
       - name: Set up Rust toolchain
-        uses: actions-rs/toolchain@v1.0.6
+        uses: actions-rs/toolchain@v1.0.7
         with:
           toolchain: ${{ matrix.toolchain }}
           override: true
       - name: Set up Python
-        uses: actions/setup-python@v3.1.2
+        uses: actions/setup-python@v4.0.0
+        with:
+          python-version: "3.x"
       - name: Run pre-commit
-        uses: pre-commit/action@v2.0.3
+        uses: pre-commit/action@v3.0.0

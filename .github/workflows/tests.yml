@@ -31,9 +31,9 @@ jobs:
         uses: actions-rs/cargo@v1.0.3
         with:
           command: build
-          args: --verbose --release
+          args: --verbose
       - name: Test
         uses: actions-rs/cargo@v1.0.3
         with:
           command: test
-          args: --verbose --release
+          args: --verbose --no-fail-fastp

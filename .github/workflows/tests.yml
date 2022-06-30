@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         platform: [ ubuntu-latest, macos-latest, windows-latest ]
-        toolchain: [ stable ]
+        toolchain: [ stable, nightly ]
 
     runs-on: ${{ matrix.platform }}
 

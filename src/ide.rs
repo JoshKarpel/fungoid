@@ -4,8 +4,7 @@ use std::{
 };
 
 use crossterm::{
-    event,
-    event::{poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -14,14 +13,15 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
-    widgets::{List, ListItem},
+    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
     Frame, Terminal,
 };
 
-use crate::execution::ExecutionState;
-use crate::ide::HandleKeyResut::{Continue, Quit};
-use crate::program::{Position, Program};
+use crate::{
+    execution::{ExecutionError, ExecutionState},
+    ide::HandleKeyResult::{Continue, Quit},
+    program::{Position, Program},
+};
 
 pub fn ide(program: Program) -> crossterm::Result<()> {
     // setup terminal
@@ -56,6 +56,7 @@ struct IDEState {
     following: bool,
     editing: bool,
     view_center: Position,
+    error: Option<ExecutionError>,
 }
 
 impl IDEState {
@@ -66,6 +67,7 @@ impl IDEState {
             following: false,
             editing: false,
             view_center: Position { x: 0, y: 0 },
+            error: None,
         }
     }
 
@@ -113,7 +115,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::
     }
 }
 
-enum HandleKeyResut {
+enum HandleKeyResult {
     Continue,
     Quit,
 }
@@ -123,7 +125,7 @@ fn handle_key(
     ide_state: &mut IDEState,
     execution_state: &mut ExecutionState<&[u8], Vec<u8>>,
     program: &mut Program,
-) -> HandleKeyResut {
+) -> HandleKeyResult {
     if let Event::Key(key) = event {
         match key.code {
             KeyCode::Char('i') if !ide_state.editing => {
@@ -153,7 +155,13 @@ fn handle_key(
             KeyCode::Char(' ') if !ide_state.editing => ide_state.paused = !ide_state.paused,
             KeyCode::Char('t') if !ide_state.editing => {
                 ide_state.paused = true;
-                execution_state.step();
+                let result = execution_state.step();
+                if let Err(e) = result {
+                    ide_state.error = Some(e);
+                    execution_state.reset();
+                    execution_state.program = program.clone();
+                    execution_state.output.clear();
+                }
             }
             KeyCode::Char('f') => ide_state.following = !ide_state.following,
             KeyCode::Char('+') => {
@@ -200,12 +208,21 @@ fn handle_key(
 fn handle_tick(
     ide_state: &mut IDEState,
     execution_state: &mut ExecutionState<&[u8], Vec<u8>>,
-    _program: &mut Program,
-) -> HandleKeyResut {
+    program: &mut Program,
+) -> HandleKeyResult {
     if !ide_state.paused {
-        execution_state.step();
+        let result = execution_state.step();
+
         if ide_state.following {
             ide_state.view_center = execution_state.pointer.position
+        }
+
+        if let Err(e) = result {
+            ide_state.paused = true;
+            ide_state.error = Some(e);
+            execution_state.reset();
+            execution_state.program = program.clone();
+            execution_state.output.clear();
         }
     }
 
@@ -305,7 +322,12 @@ fn ui<B: Backend>(
     )
     .style(Style::default().fg(Color::White));
 
-    let o = std::str::from_utf8(&program_state.output).unwrap();
+    let mut o = std::str::from_utf8(&program_state.output)
+        .unwrap()
+        .to_string();
+    if let Some(e) = &ide_state.error {
+        o.push_str(&format!("\n{}", e));
+    }
     let output = Paragraph::new(o)
         .block(
             Block::default()

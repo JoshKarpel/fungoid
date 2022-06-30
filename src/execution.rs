@@ -1,10 +1,16 @@
-use std::cmp::Ordering;
-use std::convert::TryInto;
-use std::io::{Read, Write};
+use std::{
+    cmp::Ordering,
+    convert::TryInto,
+    error::Error,
+    fmt::{Display, Formatter},
+    io::{Read, Write},
+};
 
-use rand::distributions::{Distribution, Standard};
-use rand::prelude::ThreadRng;
-use rand::{thread_rng, Rng};
+use rand::{
+    distributions::{Distribution, Standard},
+    prelude::ThreadRng,
+    thread_rng, Rng,
+};
 
 use crate::program::{Position, Program};
 
@@ -42,7 +48,7 @@ impl InstructionPointer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stack(Vec<isize>);
 
 impl Stack {
@@ -70,6 +76,43 @@ impl Stack {
         self.0.clone()
     }
 }
+
+#[derive(Clone, Debug)]
+pub enum ExecutionError {
+    OutputFailed,
+    InputFailed,
+    UnrecognizedInstruction {
+        position: Position,
+        instruction: char,
+    },
+}
+
+impl Display for ExecutionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionError::OutputFailed => {
+                write!(f, "Failed to write output")
+            }
+            ExecutionError::InputFailed => {
+                write!(f, "Failed to read input")
+            }
+            ExecutionError::UnrecognizedInstruction {
+                position,
+                instruction,
+            } => {
+                write!(
+                    f,
+                    "Unrecognized instruction at (x={}, y={}): '{}'",
+                    position.x, position.y, instruction
+                )
+            }
+        }
+    }
+}
+
+impl Error for ExecutionError {}
+
+pub type ExecutionResult = Result<(), ExecutionError>;
 
 pub struct ExecutionState<R: Read, O: Write> {
     pub program: Program,
@@ -109,10 +152,12 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
         self.instruction_count = 0;
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> ExecutionResult {
         while !self.terminated {
-            self.step();
+            self.step()?;
         }
+
+        Ok(())
     }
 
     fn trace(&self) {
@@ -127,7 +172,7 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
         );
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> ExecutionResult {
         if self.trace {
             self.trace();
         }
@@ -229,11 +274,12 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
                 self.stack.pop();
             }
             '.' => {
-                write!(self.output, "{}", self.stack.pop()).expect("Failed to write int");
+                write!(self.output, "{}", self.stack.pop())
+                    .map_err(|_| ExecutionError::OutputFailed)?;
             }
             ',' => {
                 write!(self.output, "{}", self.stack.pop() as u8 as char)
-                    .expect("Failed to write char");
+                    .map_err(|_| ExecutionError::OutputFailed)?;
             }
             '#' => move_pointer(&mut self.pointer),
             // get
@@ -256,7 +302,7 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
                 let mut input = String::new();
                 self.input
                     .read_to_string(&mut input)
-                    .expect("failed to read int");
+                    .map_err(|_| ExecutionError::InputFailed)?;
                 self.stack.push(input.trim().parse::<isize>().unwrap());
             }
             // get char from user
@@ -265,20 +311,27 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
                 let mut input = String::new();
                 self.input
                     .read_to_string(&mut input)
-                    .expect("failed to read char");
+                    .map_err(|_| ExecutionError::InputFailed)?;
                 self.stack
                     .push(isize::from(input.chars().next().unwrap() as u8));
             }
             '@' => {
                 self.terminated = true;
-                return; // exit immediately (do not move the pointer when terminating)
+                return Ok(()); // exit immediately (do not move the pointer when terminating)
             }
             c @ '0'..='9' => self.stack.push(c.to_digit(10).unwrap().try_into().unwrap()),
             ' ' => {}
-            c => panic!("Unrecognized instruction! {}", c),
+            c => {
+                return Err(ExecutionError::UnrecognizedInstruction {
+                    position: self.pointer.position,
+                    instruction: c,
+                });
+            }
         }
 
         move_pointer(&mut self.pointer);
+
+        Ok(())
     }
 }
 
@@ -293,22 +346,24 @@ fn move_pointer(pointer: &mut InstructionPointer) {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
     use std::str::FromStr;
 
-    use crate::examples::{FACTORIAL, QUINE};
-    use crate::execution::ExecutionState;
-    use crate::program::Program;
+    use crate::{
+        examples::{ERATOSTHENES, FACTORIAL, HELLO_WORLD, QUINE},
+        execution::{ExecutionError, ExecutionState},
+        program::Position,
+        program::Program,
+    };
 
-    const HELLO_WORLD: &str = r#"64+"!dlroW ,olleH">:#,_@"#;
+    type GenericResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
-    fn hello_world() -> Result<(), io::Error> {
+    fn hello_world() -> GenericResult {
         let program = Program::from_str(HELLO_WORLD)?;
         let input = [];
         let output = Vec::new();
         let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
-        execution.run();
+        execution.run()?;
         assert_eq!(
             "Hello, World!\n",
             String::from_utf8(execution.output).unwrap()
@@ -317,19 +372,13 @@ mod tests {
         Ok(())
     }
 
-    const SIEVE_OF_ERATOSTHENES: &str = r#"2>:3g" "-!v\  g30          <
- |!`"O":+1_:.:03p>03g+:"O"`|
- @               ^  p3\" ":<
-2 234567890123456789012345678901234567890123456789012345678901234567890123456789
-"#;
-
     #[test]
-    fn sieve_of_eratosthenes() -> Result<(), io::Error> {
-        let program = Program::from_str(SIEVE_OF_ERATOSTHENES)?;
+    fn sieve_of_eratosthenes() -> GenericResult {
+        let program = Program::from_str(ERATOSTHENES)?;
         let input = [];
         let output = Vec::new();
         let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
-        execution.run();
+        execution.run()?;
         assert_eq!(
             "2357111317192329313741434753596167717379",
             String::from_utf8(execution.output).unwrap()
@@ -339,12 +388,12 @@ mod tests {
     }
 
     #[test]
-    fn quine() -> Result<(), io::Error> {
+    fn quine() -> GenericResult {
         let program = Program::from_str(QUINE)?;
         let input = [];
         let output = Vec::new();
         let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
-        execution.run();
+        execution.run()?;
         assert_eq!(
             QUINE.trim_end(),
             String::from_utf8(execution.output).unwrap()
@@ -354,13 +403,33 @@ mod tests {
     }
 
     #[test]
-    fn factorial() -> Result<(), io::Error> {
+    fn factorial() -> GenericResult {
         let program = Program::from_str(FACTORIAL)?;
         let input = ["5".chars().next().unwrap() as u8];
         let output = Vec::new();
         let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
-        execution.run();
+        execution.run()?;
         assert_eq!("120", String::from_utf8(execution.output).unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_instruction() -> GenericResult {
+        let program = Program::from_str("z")?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        let result = execution.run();
+        assert!(if let Err(ExecutionError::UnrecognizedInstruction {
+            position,
+            instruction,
+        }) = result
+        {
+            position == Position { x: 0, y: 0 } && instruction == 'z'
+        } else {
+            false
+        });
 
         Ok(())
     }

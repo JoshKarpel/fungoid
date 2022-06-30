@@ -23,9 +23,9 @@ fn main() {
     }
 }
 
-type MainError = Result<(), Box<dyn std::error::Error>>;
+type GenericResult = Result<(), Box<dyn std::error::Error>>;
 
-fn _main() -> MainError {
+fn _main() -> GenericResult {
     let matches = Command::new("fungoid")
         .version("0.2.1")
         .author("Josh Karpel <josh.karpel@gmail.com>")
@@ -110,7 +110,7 @@ fn load_program(matches: &ArgMatches) -> Result<Program, Box<dyn Error>> {
     }
 }
 
-fn ide(matches: &ArgMatches) -> MainError {
+fn ide(matches: &ArgMatches) -> GenericResult {
     let program = load_program(matches)?;
 
     fungoid::ide::ide(program)?;
@@ -118,7 +118,7 @@ fn ide(matches: &ArgMatches) -> MainError {
     Ok(())
 }
 
-fn run_program(matches: &ArgMatches) -> MainError {
+fn run_program(matches: &ArgMatches) -> GenericResult {
     let program = load_program(matches)?;
 
     let input = &mut io::stdin();
@@ -130,14 +130,17 @@ fn run_program(matches: &ArgMatches) -> MainError {
         output,
     );
 
-    run(program_state, matches.is_present("profile"));
+    run(program_state, matches.is_present("profile"))?;
 
     Ok(())
 }
 
-pub fn run<R: Read, O: Write>(mut program_state: ExecutionState<R, O>, profile: bool) {
+pub fn run<R: Read, O: Write>(
+    mut program_state: ExecutionState<R, O>,
+    profile: bool,
+) -> GenericResult {
     let start = Instant::now();
-    program_state.run();
+    program_state.run()?;
     let duration = start.elapsed();
 
     let num_seconds = 1.0e-9 * (duration.as_nanos() as f64);
@@ -150,4 +153,6 @@ pub fn run<R: Read, O: Write>(mut program_state: ExecutionState<R, O>, profile: 
             ((program_state.instruction_count as f64 / num_seconds) as u64).separated_string()
         );
     }
+
+    Ok(())
 }

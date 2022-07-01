@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write,
     io,
     time::{Duration, Instant},
 };
@@ -327,7 +328,7 @@ fn ui<B: Backend>(
         .unwrap()
         .to_string();
     if let Some(e) = &ide_state.error {
-        o.push_str(&format!("\n{}", e));
+        write!(o, "\n{}", e).expect("Failed to generate error message");
     }
     let output = Paragraph::new(o)
         .block(

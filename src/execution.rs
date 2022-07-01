@@ -351,8 +351,7 @@ mod tests {
     use crate::{
         examples::{ERATOSTHENES, FACTORIAL, HELLO_WORLD, QUINE},
         execution::{ExecutionError, ExecutionState},
-        program::Position,
-        program::Program,
+        program::{Position, Program},
     };
 
     type GenericResult = Result<(), Box<dyn std::error::Error>>;

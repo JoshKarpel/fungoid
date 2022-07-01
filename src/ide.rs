@@ -4,7 +4,8 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event,
+    event::{poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };

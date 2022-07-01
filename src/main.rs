@@ -1,20 +1,18 @@
-use std::fmt::Display;
 use std::{
     error::Error,
     fmt,
-    io::{self, Read, Write},
+    fmt::Display,
+    io,
+    io::{Read, Write},
     str::FromStr,
     time::Instant,
 };
 
 use clap::{Arg, ArgMatches, Command};
+use fungoid::{examples::EXAMPLES, execution::ExecutionState, program::Program};
 use humantime::format_duration;
 use itertools::Itertools;
 use separator::Separatable;
-
-use fungoid::examples::EXAMPLES;
-use fungoid::execution::ExecutionState;
-use fungoid::program::Program;
 
 fn main() {
     if let Err(e) = _main() {

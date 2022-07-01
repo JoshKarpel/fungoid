@@ -26,6 +26,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           override: true
+          components: rustfmt, clippy
       - name: Set up Python
         uses: actions/setup-python@v4.0.0
         with:

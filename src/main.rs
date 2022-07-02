@@ -1,9 +1,18 @@
-extern crate clap;
-extern crate fungoid;
-
-use std::io;
+use std::{
+    error::Error,
+    fmt,
+    fmt::Display,
+    io,
+    io::{Read, Write},
+    str::FromStr,
+    time::Instant,
+};
 
 use clap::{Arg, ArgMatches, Command};
+use fungoid::{examples::EXAMPLES, execution::ExecutionState, program::Program};
+use humantime::format_duration;
+use itertools::Itertools;
+use separator::Separatable;
 
 fn main() {
     if let Err(e) = _main() {
@@ -12,11 +21,11 @@ fn main() {
     }
 }
 
-type MainError = Result<(), Box<dyn std::error::Error>>;
+type GenericResult = Result<(), Box<dyn std::error::Error>>;
 
-fn _main() -> MainError {
+fn _main() -> GenericResult {
     let matches = Command::new("fungoid")
-        .version("0.2.0")
+        .version("0.2.1")
         .author("Josh Karpel <josh.karpel@gmail.com>")
         .about("A Befunge interpreter written in Rust")
         .subcommand(
@@ -41,28 +50,74 @@ fn _main() -> MainError {
                     .required(true),
             ),
         )
+        .subcommand(
+            Command::new("examples").about("Print the names of the bundled example programs."),
+        )
         .arg_required_else_help(true)
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("ide") {
         ide(matches)?;
     } else if let Some(matches) = matches.subcommand_matches("run") {
-        run(matches)?;
+        run_program(matches)?;
+    } else if matches.subcommand_matches("examples").is_some() {
+        println!("{}", EXAMPLES.keys().sorted().join("\n"))
     }
 
     Ok(())
 }
 
-fn ide(matches: &ArgMatches) -> MainError {
-    let program = fungoid::program::Program::from_file(matches.value_of("FILE").unwrap())?;
+#[derive(Debug)]
+struct NoExampleFound {
+    msg: String,
+}
+
+impl NoExampleFound {
+    fn new(msg: String) -> NoExampleFound {
+        NoExampleFound { msg }
+    }
+}
+
+impl Display for NoExampleFound {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+impl Error for NoExampleFound {
+    fn description(&self) -> &str {
+        &self.msg
+    }
+}
+
+fn load_program(matches: &ArgMatches) -> Result<Program, Box<dyn Error>> {
+    let file = matches.value_of("FILE").unwrap();
+    if file.starts_with("example:") || file.starts_with("examples:") {
+        let (_, e) = file.split_once(':').unwrap();
+        if let Some(p) = EXAMPLES.get(e) {
+            Ok(Program::from_str(p)?)
+        } else {
+            Err(Box::new(NoExampleFound::new(format!(
+                "No example named '{}'.\nExamples: {:?}",
+                e,
+                EXAMPLES.keys()
+            ))))
+        }
+    } else {
+        Ok(Program::from_file(file)?)
+    }
+}
+
+fn ide(matches: &ArgMatches) -> GenericResult {
+    let program = load_program(matches)?;
 
     fungoid::ide::ide(program)?;
 
     Ok(())
 }
 
-fn run(matches: &ArgMatches) -> MainError {
-    let program = fungoid::program::Program::from_file(matches.value_of("FILE").unwrap())?;
+fn run_program(matches: &ArgMatches) -> GenericResult {
+    let program = load_program(matches)?;
 
     let input = &mut io::stdin();
     let output = &mut io::stdout();
@@ -73,10 +128,28 @@ fn run(matches: &ArgMatches) -> MainError {
         output,
     );
 
-    if matches.is_present("time") {
-        fungoid::time(program_state);
-    } else {
-        fungoid::run_to_termination(program_state);
+    run(program_state, matches.is_present("profile"))?;
+
+    Ok(())
+}
+
+pub fn run<R: Read, O: Write>(
+    mut program_state: ExecutionState<R, O>,
+    profile: bool,
+) -> GenericResult {
+    let start = Instant::now();
+    program_state.run()?;
+    let duration = start.elapsed();
+
+    let num_seconds = 1.0e-9 * (duration.as_nanos() as f64);
+
+    if profile {
+        eprintln!(
+            "Executed {} instructions in {} ({} instructions/second)",
+            program_state.instruction_count,
+            format_duration(duration),
+            ((program_state.instruction_count as f64 / num_seconds) as u64).separated_string()
+        );
     }
 
     Ok(())

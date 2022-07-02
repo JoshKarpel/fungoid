@@ -1,12 +1,18 @@
-use std::cmp::Ordering;
-use std::convert::TryInto;
-use std::io::{Read, Write};
+use std::{
+    cmp::Ordering,
+    convert::TryInto,
+    error::Error,
+    fmt::{Display, Formatter},
+    io::{Read, Write},
+};
 
-use rand::distributions::{Distribution, Standard};
-use rand::prelude::ThreadRng;
-use rand::{thread_rng, Rng};
+use rand::{
+    distributions::{Distribution, Standard},
+    prelude::ThreadRng,
+    thread_rng, Rng,
+};
 
-use crate::{Position, Program};
+use crate::program::{Position, Program};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PointerDirection {
@@ -42,7 +48,7 @@ impl InstructionPointer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stack(Vec<isize>);
 
 impl Stack {
@@ -71,7 +77,44 @@ impl Stack {
     }
 }
 
-pub struct ExecutionState<'input, 'output, O: Write> {
+#[derive(Clone, Debug)]
+pub enum ExecutionError {
+    OutputFailed,
+    InputFailed,
+    UnrecognizedInstruction {
+        position: Position,
+        instruction: char,
+    },
+}
+
+impl Display for ExecutionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionError::OutputFailed => {
+                write!(f, "Failed to write output")
+            }
+            ExecutionError::InputFailed => {
+                write!(f, "Failed to read input")
+            }
+            ExecutionError::UnrecognizedInstruction {
+                position,
+                instruction,
+            } => {
+                write!(
+                    f,
+                    "Unrecognized instruction at (x={}, y={}): '{}'",
+                    position.x, position.y, instruction
+                )
+            }
+        }
+    }
+}
+
+impl Error for ExecutionError {}
+
+pub type ExecutionResult = Result<(), ExecutionError>;
+
+pub struct ExecutionState<R: Read, O: Write> {
     pub program: Program,
     pub pointer: InstructionPointer,
     pub stack: Stack,
@@ -80,17 +123,12 @@ pub struct ExecutionState<'input, 'output, O: Write> {
     string_mode: bool,
     trace: bool,
     pub instruction_count: u64,
-    input: &'input mut dyn Read,
-    pub output: &'output mut O,
+    pub input: R,
+    pub output: O,
 }
 
-impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
-    pub fn new(
-        program: Program,
-        trace: bool,
-        input: &'input mut dyn Read,
-        output: &'output mut O,
-    ) -> Self {
+impl<R: Read, O: Write> ExecutionState<R, O> {
+    pub fn new(program: Program, trace: bool, input: R, output: O) -> Self {
         ExecutionState {
             program,
             pointer: InstructionPointer::new(),
@@ -114,12 +152,12 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
         self.instruction_count = 0;
     }
 
-    pub fn run(mut self) -> Self {
+    pub fn run(&mut self) -> ExecutionResult {
         while !self.terminated {
-            self.step();
+            self.step()?;
         }
 
-        self
+        Ok(())
     }
 
     fn trace(&self) {
@@ -134,7 +172,7 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
         );
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> ExecutionResult {
         if self.trace {
             self.trace();
         }
@@ -236,11 +274,12 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
                 self.stack.pop();
             }
             '.' => {
-                write!(self.output, "{}", self.stack.pop()).expect("Failed to write int");
+                write!(self.output, "{}", self.stack.pop())
+                    .map_err(|_| ExecutionError::OutputFailed)?;
             }
             ',' => {
                 write!(self.output, "{}", self.stack.pop() as u8 as char)
-                    .expect("Failed to write char");
+                    .map_err(|_| ExecutionError::OutputFailed)?;
             }
             '#' => move_pointer(&mut self.pointer),
             // get
@@ -258,32 +297,41 @@ impl<'input, 'output, O: Write> ExecutionState<'input, 'output, O> {
                 self.program.set(&Position { x, y }, v as u8 as char);
             }
             // get int from user
+            // TODO: does not actually work from stdin
             '&' => {
                 let mut input = String::new();
                 self.input
                     .read_to_string(&mut input)
-                    .expect("failed to read int");
+                    .map_err(|_| ExecutionError::InputFailed)?;
                 self.stack.push(input.trim().parse::<isize>().unwrap());
             }
             // get char from user
+            // TODO: does not actually work from stdin
             '~' => {
                 let mut input = String::new();
                 self.input
                     .read_to_string(&mut input)
-                    .expect("failed to read char");
+                    .map_err(|_| ExecutionError::InputFailed)?;
                 self.stack
                     .push(isize::from(input.chars().next().unwrap() as u8));
             }
             '@' => {
                 self.terminated = true;
-                return; // exit immediately (do not move the pointer when terminating)
+                return Ok(()); // exit immediately (do not move the pointer when terminating)
             }
             c @ '0'..='9' => self.stack.push(c.to_digit(10).unwrap().try_into().unwrap()),
             ' ' => {}
-            c => panic!("Unrecognized instruction! {}", c),
+            c => {
+                return Err(ExecutionError::UnrecognizedInstruction {
+                    position: self.pointer.position,
+                    instruction: c,
+                });
+            }
         }
 
         move_pointer(&mut self.pointer);
+
+        Ok(())
     }
 }
 
@@ -293,5 +341,95 @@ fn move_pointer(pointer: &mut InstructionPointer) {
         PointerDirection::Down => pointer.position.y += 1,
         PointerDirection::Right => pointer.position.x += 1,
         PointerDirection::Left => pointer.position.x -= 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use crate::{
+        examples::{ERATOSTHENES, FACTORIAL, HELLO_WORLD, QUINE},
+        execution::{ExecutionError, ExecutionState},
+        program::{Position, Program},
+    };
+
+    type GenericResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn hello_world() -> GenericResult {
+        let program = Program::from_str(HELLO_WORLD)?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run()?;
+        assert_eq!(
+            "Hello, World!\n",
+            String::from_utf8(execution.output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn sieve_of_eratosthenes() -> GenericResult {
+        let program = Program::from_str(ERATOSTHENES)?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run()?;
+        assert_eq!(
+            "2357111317192329313741434753596167717379",
+            String::from_utf8(execution.output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn quine() -> GenericResult {
+        let program = Program::from_str(QUINE)?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run()?;
+        assert_eq!(
+            QUINE.trim_end(),
+            String::from_utf8(execution.output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn factorial() -> GenericResult {
+        let program = Program::from_str(FACTORIAL)?;
+        let input = ["5".chars().next().unwrap() as u8];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        execution.run()?;
+        assert_eq!("120", String::from_utf8(execution.output).unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_instruction() -> GenericResult {
+        let program = Program::from_str("z")?;
+        let input = [];
+        let output = Vec::new();
+        let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
+        let result = execution.run();
+        assert!(if let Err(ExecutionError::UnrecognizedInstruction {
+            position,
+            instruction,
+        }) = result
+        {
+            position == Position { x: 0, y: 0 } && instruction == 'z'
+        } else {
+            false
+        });
+
+        Ok(())
     }
 }

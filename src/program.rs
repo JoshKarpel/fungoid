@@ -32,17 +32,20 @@ impl Program {
         Program::from_str(&contents)
     }
 
-    pub fn view(&self, upper_left: &Position, lower_right: &Position) -> Vec<(Position, char)> {
+    pub fn view(
+        &self,
+        upper_left: &Position,
+        lower_right: &Position,
+    ) -> impl Iterator<Item = (Position, char)> + '_ {
         (upper_left.y..=lower_right.y)
             .cartesian_product(upper_left.x..=lower_right.x)
             .map(move |(y, x)| {
                 let p = Position { x, y };
                 (p, self.get(&p))
             })
-            .collect_vec()
     }
 
-    pub fn bounds(&self) -> Option<(Position, Position)> {
+    pub fn extent(&self) -> Option<(Position, Position)> {
         match self.0.keys().minmax() {
             MinMaxResult::NoElements => None,
             MinMaxResult::OneElement(e) => Some((*e, *e)),
@@ -103,21 +106,21 @@ mod tests {
     }
 
     #[test]
-    fn test_bounds_with_empty_program_is_none() -> GenericResult {
+    fn test_extent_with_empty_program_is_none() -> GenericResult {
         let program = Program::new();
 
-        assert!(program.bounds().is_none());
+        assert!(program.extent().is_none());
 
         Ok(())
     }
 
     #[test]
-    fn test_bounds_with_one_cell_program_is_that_cell_twice() -> GenericResult {
+    fn test_extent_with_one_cell_program_is_that_cell_twice() -> GenericResult {
         let mut program = Program::new();
         program.set(&Position { x: 0, y: 0 }, '.');
 
         assert_eq!(
-            program.bounds().unwrap(),
+            program.extent().unwrap(),
             (Position { x: 0, y: 0 }, Position { x: 0, y: 0 })
         );
 
@@ -125,13 +128,13 @@ mod tests {
     }
 
     #[test]
-    fn test_bounds_with_multi_cell_program() -> GenericResult {
+    fn test_extent_with_multi_cell_program() -> GenericResult {
         let mut program = Program::new();
         program.set(&Position { x: 0, y: 0 }, '.');
         program.set(&Position { x: 1, y: 2 }, '.');
 
         assert_eq!(
-            program.bounds().unwrap(),
+            program.extent().unwrap(),
             (Position { x: 0, y: 0 }, Position { x: 1, y: 2 })
         );
 

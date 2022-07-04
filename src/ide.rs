@@ -34,7 +34,7 @@ pub fn ide(program: Program) -> crossterm::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let res = run_app(&mut terminal, program);
+    let res = run_ide(&mut terminal, program);
 
     // restore terminal
     disable_raw_mode()?;
@@ -78,7 +78,7 @@ impl IDEState {
     }
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
+fn run_ide<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
     let input = Vec::new();
     let output = Vec::new();
     let mut execution_state = ExecutionState::new(program.clone(), false, input.as_slice(), output);
@@ -275,18 +275,17 @@ fn ui<B: Backend>(
         program_state
             .program
             .view(&upper_left, &lower_right)
-            .iter()
             .group_by(|(p, _)| p.y)
             .into_iter()
             .map(|(_, row)| {
                 Row::new(row.map(|(p, c)| {
-                    let style = if p == &program_state.pointer.position {
+                    let style = if p == program_state.pointer.position {
                         if program_state.terminated {
                             Style::default().bg(Color::Red)
                         } else {
                             Style::default().bg(Color::Green)
                         }
-                    } else if p == &ide_state.view_center {
+                    } else if p == ide_state.view_center {
                         Style::default().bg(Color::LightMagenta)
                     } else {
                         Style::default()

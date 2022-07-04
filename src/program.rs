@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs::File, io, io::Read, str::FromStr};
 
-use itertools::Itertools;
+use itertools::{Itertools, MinMaxResult};
 
 #[derive(Debug, Clone)]
 pub struct Program(HashMap<Position, char>);
@@ -41,6 +41,14 @@ impl Program {
             })
             .collect_vec()
     }
+
+    pub fn bounds(&self) -> Option<(Position, Position)> {
+        match self.0.keys().minmax() {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(e) => Some((*e, *e)),
+            MinMaxResult::MinMax(ul, lr) => Some((*ul, *lr)),
+        }
+    }
 }
 
 impl FromStr for Program {
@@ -62,5 +70,71 @@ impl FromStr for Program {
         }
 
         Ok(program)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use crate::program::{Position, Program};
+
+    pub type GenericResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn test_from_str() -> GenericResult {
+        let program = Program::from_str("12\n34")?;
+
+        assert_eq!(program.get(&Position { x: 0, y: 0 }), '1');
+        assert_eq!(program.get(&Position { x: 1, y: 0 }), '2');
+        assert_eq!(program.get(&Position { x: 0, y: 1 }), '3');
+        assert_eq!(program.get(&Position { x: 1, y: 1 }), '4');
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_can_set_and_get_a_cell() -> GenericResult {
+        let mut program = Program::new();
+        program.set(&Position { x: 0, y: 0 }, '.');
+        assert_eq!(program.get(&Position { x: 0, y: 0 }), '.');
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bounds_with_empty_program_is_none() -> GenericResult {
+        let program = Program::new();
+
+        assert!(program.bounds().is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bounds_with_one_cell_program_is_that_cell_twice() -> GenericResult {
+        let mut program = Program::new();
+        program.set(&Position { x: 0, y: 0 }, '.');
+
+        assert_eq!(
+            program.bounds().unwrap(),
+            (Position { x: 0, y: 0 }, Position { x: 0, y: 0 })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bounds_with_multi_cell_program() -> GenericResult {
+        let mut program = Program::new();
+        program.set(&Position { x: 0, y: 0 }, '.');
+        program.set(&Position { x: 1, y: 2 }, '.');
+
+        assert_eq!(
+            program.bounds().unwrap(),
+            (Position { x: 0, y: 0 }, Position { x: 1, y: 2 })
+        );
+
+        Ok(())
     }
 }

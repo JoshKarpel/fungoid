@@ -354,7 +354,7 @@ mod tests {
         program::{Position, Program},
     };
 
-    type GenericResult = Result<(), Box<dyn std::error::Error>>;
+    pub type GenericResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn hello_world() -> GenericResult {

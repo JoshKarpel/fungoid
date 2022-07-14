@@ -12,7 +12,7 @@ repository = "https://github.com/JoshKarpel/fungoid"
 
 [dependencies]
 chrono = "0.4.19"
-clap = "3.2.7"
+clap = "3.2.11"
 crossterm = "0.24.0"
 humantime = "2.0.1"
 rand = "0.8.5"

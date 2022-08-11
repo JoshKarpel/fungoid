@@ -80,6 +80,8 @@ impl FromStr for Program {
 mod tests {
     use std::str::FromStr;
 
+    use itertools::Itertools;
+
     use crate::program::{Position, Program};
 
     pub type GenericResult = Result<(), Box<dyn std::error::Error>>;
@@ -99,8 +101,12 @@ mod tests {
     #[test]
     fn test_can_set_and_get_a_cell() -> GenericResult {
         let mut program = Program::new();
-        program.set(&Position { x: 0, y: 0 }, '.');
-        assert_eq!(program.get(&Position { x: 0, y: 0 }), '.');
+
+        let pos = Position { x: 0, y: 0 };
+        assert_eq!(program.get(&pos), ' '); // get on an empty cell is blank
+
+        program.set(&pos, '.');
+        assert_eq!(program.get(&pos), '.');
 
         Ok(())
     }
@@ -136,6 +142,83 @@ mod tests {
         assert_eq!(
             program.extent().unwrap(),
             (Position { x: 0, y: 0 }, Position { x: 1, y: 2 })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_view() -> GenericResult {
+        let mut program = Program::new();
+        (0..=2).cartesian_product(0..=2).for_each(|(x, y)| {
+            program.set(&Position { x, y }, '.');
+        });
+
+        assert_eq!(
+            program
+                .view(&Position { x: 0, y: 0 }, &Position { x: 0, y: 0 })
+                .collect_vec(),
+            vec![(Position { x: 0, y: 0 }, '.')]
+        );
+
+        assert_eq!(
+            program
+                .view(&Position { x: 0, y: 0 }, &Position { x: 1, y: 0 })
+                .collect_vec(),
+            vec![
+                (Position { x: 0, y: 0 }, '.'),
+                (Position { x: 1, y: 0 }, '.'),
+            ]
+        );
+
+        assert_eq!(
+            program
+                .view(&Position { x: 0, y: 0 }, &Position { x: 0, y: 1 })
+                .collect_vec(),
+            vec![
+                (Position { x: 0, y: 0 }, '.'),
+                (Position { x: 0, y: 1 }, '.'),
+            ]
+        );
+
+        assert_eq!(
+            program
+                .view(&Position { x: 0, y: 0 }, &Position { x: 1, y: 1 })
+                .collect_vec(),
+            vec![
+                (Position { x: 0, y: 0 }, '.'),
+                (Position { x: 1, y: 0 }, '.'),
+                (Position { x: 0, y: 1 }, '.'),
+                (Position { x: 1, y: 1 }, '.'),
+            ]
+        );
+
+        assert_eq!(
+            program
+                .view(&Position { x: 1, y: 0 }, &Position { x: 2, y: 2 })
+                .collect_vec(),
+            vec![
+                (Position { x: 1, y: 0 }, '.'),
+                (Position { x: 2, y: 0 }, '.'),
+                (Position { x: 1, y: 1 }, '.'),
+                (Position { x: 2, y: 1 }, '.'),
+                (Position { x: 1, y: 2 }, '.'),
+                (Position { x: 2, y: 2 }, '.'),
+            ]
+        );
+
+        assert_eq!(
+            program
+                .view(&Position { x: 0, y: 1 }, &Position { x: 2, y: 2 })
+                .collect_vec(),
+            vec![
+                (Position { x: 0, y: 1 }, '.'),
+                (Position { x: 1, y: 1 }, '.'),
+                (Position { x: 2, y: 1 }, '.'),
+                (Position { x: 0, y: 2 }, '.'),
+                (Position { x: 1, y: 2 }, '.'),
+                (Position { x: 2, y: 2 }, '.'),
+            ]
         );
 
         Ok(())

@@ -34,7 +34,7 @@ pub fn ide(program: Program) -> crossterm::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let res = run_app(&mut terminal, program);
+    let res = run_ide(&mut terminal, program);
 
     // restore terminal
     disable_raw_mode()?;
@@ -78,7 +78,7 @@ impl IDEState {
     }
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
+fn run_ide<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::Result<()> {
     let input = Vec::new();
     let output = Vec::new();
     let mut execution_state = ExecutionState::new(program.clone(), false, input.as_slice(), output);
@@ -173,31 +173,19 @@ fn handle_key(
                 ide_state.instructions_per_second = (ide_state.instructions_per_second - 1).max(1)
             }
             KeyCode::Left => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x - 1,
-                    y: ide_state.view_center.y,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(-1, 0);
                 ide_state.following = false;
             }
             KeyCode::Right => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x + 1,
-                    y: ide_state.view_center.y,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(1, 0);
                 ide_state.following = false;
             }
             KeyCode::Up => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x,
-                    y: ide_state.view_center.y - 1,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(0, -1);
                 ide_state.following = false;
             }
             KeyCode::Down => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x,
-                    y: ide_state.view_center.y + 1,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(0, 1);
                 ide_state.following = false;
             }
             _ => {}
@@ -275,18 +263,17 @@ fn ui<B: Backend>(
         program_state
             .program
             .view(&upper_left, &lower_right)
-            .iter()
             .group_by(|(p, _)| p.y)
             .into_iter()
             .map(|(_, row)| {
                 Row::new(row.map(|(p, c)| {
-                    let style = if p == &program_state.pointer.position {
+                    let style = if p == program_state.pointer.position {
                         if program_state.terminated {
                             Style::default().bg(Color::Red)
                         } else {
                             Style::default().bg(Color::Green)
                         }
-                    } else if p == &ide_state.view_center {
+                    } else if p == ide_state.view_center {
                         Style::default().bg(Color::LightMagenta)
                     } else {
                         Style::default()

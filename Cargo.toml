@@ -1,6 +1,6 @@
 [package]
 name = "fungoid"
-version = "0.2.1"
+version = "0.2.2"
 description = "A Befunge interpreter and IDE"
 authors = ["Josh Karpel <josh.karpel@gmail.com>"]
 edition = '2018'

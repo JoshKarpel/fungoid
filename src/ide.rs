@@ -173,31 +173,19 @@ fn handle_key(
                 ide_state.instructions_per_second = (ide_state.instructions_per_second - 1).max(1)
             }
             KeyCode::Left => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x - 1,
-                    y: ide_state.view_center.y,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(-1, 0);
                 ide_state.following = false;
             }
             KeyCode::Right => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x + 1,
-                    y: ide_state.view_center.y,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(1, 0);
                 ide_state.following = false;
             }
             KeyCode::Up => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x,
-                    y: ide_state.view_center.y - 1,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(0, -1);
                 ide_state.following = false;
             }
             KeyCode::Down => {
-                ide_state.view_center = Position {
-                    x: ide_state.view_center.x,
-                    y: ide_state.view_center.y + 1,
-                };
+                ide_state.view_center = ide_state.view_center.shifted(0, 1);
                 ide_state.following = false;
             }
             _ => {}

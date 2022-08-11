@@ -2,13 +2,22 @@ use std::{collections::HashMap, fs::File, io, io::Read, str::FromStr};
 
 use itertools::{Itertools, MinMaxResult};
 
-#[derive(Debug, Clone)]
-pub struct Program(HashMap<Position, char>);
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Position {
     pub x: isize,
     pub y: isize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Program(HashMap<Position, char>);
+
+impl Position {
+    pub(crate) fn shifted(&self, x: isize, y: isize) -> Self {
+        Position {
+            x: self.x + x,
+            y: self.y + y,
+        }
+    }
 }
 
 impl Program {
@@ -84,7 +93,20 @@ mod tests {
 
     use crate::program::{Position, Program};
 
-    pub type GenericResult = Result<(), Box<dyn std::error::Error>>;
+    type GenericResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn test_position_shifted() -> GenericResult {
+        let pos = Position { x: 0, y: 0 };
+
+        assert_eq!(pos.shifted(0, 0), pos);
+        assert_eq!(pos.shifted(1, 0), Position { x: 1, y: 0 });
+        assert_eq!(pos.shifted(1, 1), Position { x: 1, y: 1 });
+        assert_eq!(pos.shifted(1, -1), Position { x: 1, y: -1 });
+        assert_eq!(pos.shifted(-1, -1), Position { x: -1, y: -1 });
+
+        Ok(())
+    }
 
     #[test]
     fn test_from_str() -> GenericResult {

@@ -292,7 +292,7 @@ fn ui<B: Backend>(
             .borders(Borders::ALL),
     )
     .style(Style::default().fg(Color::White).bg(Color::Black))
-    .widths(&*widths)
+    .widths(&widths)
     .column_spacing(0);
 
     let stack = List::new(

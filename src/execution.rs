@@ -130,8 +130,10 @@ pub struct ExecutionState<R: Read, O: Write> {
 
 lazy_static! {
     pub static ref TRACE_FORMAT: Vec<FormatItem<'static>> =
-        format_description::parse_borrowed::<2>("[year]-[month]-[day] [hour]:[minute]:[second]")
-            .unwrap();
+        format_description::parse_borrowed::<2>(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:6]"
+        )
+        .unwrap();
 }
 
 impl<R: Read, O: Write> ExecutionState<R, O> {
@@ -170,7 +172,10 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
     fn trace(&self) {
         eprintln!(
             "{} [{:4}] ({:2}, {:2}) -> {} | {}",
-            OffsetDateTime::now_local().unwrap(),
+            OffsetDateTime::now_local()
+                .unwrap()
+                .format(&TRACE_FORMAT)
+                .unwrap(),
             self.instruction_count,
             self.pointer.position.x,
             self.pointer.position.y,

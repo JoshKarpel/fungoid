@@ -2,6 +2,10 @@
 
 ## 0.2.2
 
+### Changed
+
+- Dropped `chrono` dependency.
+
 ## 0.2.1
 
 ### Added

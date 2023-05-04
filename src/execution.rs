@@ -11,6 +11,7 @@ use rand::{
     prelude::ThreadRng,
     thread_rng, Rng,
 };
+use time::{format_description, format_description::FormatItem, OffsetDateTime};
 
 use crate::program::{Position, Program};
 
@@ -127,6 +128,14 @@ pub struct ExecutionState<R: Read, O: Write> {
     pub output: O,
 }
 
+lazy_static! {
+    pub static ref TRACE_FORMAT: Vec<FormatItem<'static>> =
+        format_description::parse_borrowed::<2>(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:6]"
+        )
+        .unwrap();
+}
+
 impl<R: Read, O: Write> ExecutionState<R, O> {
     pub fn new(program: Program, trace: bool, input: R, output: O) -> Self {
         ExecutionState {
@@ -163,7 +172,10 @@ impl<R: Read, O: Write> ExecutionState<R, O> {
     fn trace(&self) {
         eprintln!(
             "{} [{:4}] ({:2}, {:2}) -> {} | {}",
-            chrono::Local::now().format("%F %T%.6f"),
+            OffsetDateTime::now_local()
+                .unwrap()
+                .format(&TRACE_FORMAT)
+                .unwrap(),
             self.instruction_count,
             self.pointer.position.x,
             self.pointer.position.y,
@@ -420,15 +432,17 @@ mod tests {
         let output = Vec::new();
         let mut execution = ExecutionState::new(program, false, input.as_slice(), output);
         let result = execution.run();
-        assert!(if let Err(ExecutionError::UnrecognizedInstruction {
-            position,
-            instruction,
-        }) = result
-        {
-            position == Position { x: 0, y: 0 } && instruction == 'z'
-        } else {
-            false
-        });
+        assert!(
+            if let Err(ExecutionError::UnrecognizedInstruction {
+                position,
+                instruction,
+            }) = result
+            {
+                position == Position { x: 0, y: 0 } && instruction == 'z'
+            } else {
+                false
+            }
+        );
 
         Ok(())
     }

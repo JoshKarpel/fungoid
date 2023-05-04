@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [ stable ]
+        toolchain: [ nightly ]
 
     runs-on: ubuntu-latest
 

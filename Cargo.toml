@@ -1,6 +1,6 @@
 [package]
 name = "fungoid"
-version = "0.2.2"
+version = "0.2.3"
 description = "A Befunge interpreter and IDE"
 authors = ["Josh Karpel <josh.karpel@gmail.com>"]
 edition = '2018'
@@ -11,12 +11,12 @@ homepage = "https://github.com/JoshKarpel/fungoid"
 repository = "https://github.com/JoshKarpel/fungoid"
 
 [dependencies]
-chrono = "0.4.24"
-clap = "3.2.25"
-crossterm = "0.26.1"
-humantime = "2.0.1"
-rand = "0.8.5"
-separator = "0.4.1"
-tui = "0.19.0"
-itertools = "0.10.5"
-lazy_static = "1.4.0"
+clap = "3"
+crossterm = "0"
+humantime = "2"
+rand = "0"
+separator = "0"
+time = { version = "0", features = ["formatting", "local-offset"] }
+tui = "0"
+itertools = "0"
+lazy_static = "1"

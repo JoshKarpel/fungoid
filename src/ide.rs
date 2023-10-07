@@ -109,7 +109,7 @@ fn run_ide<B: Backend>(terminal: &mut Terminal<B>, mut program: Program) -> io::
 
         // When handling input, we might not wait the whole poll() above, so check to see if we should tick.
         if last_tick.elapsed() >= tick_time {
-            if let Quit = handle_tick(&mut ide_state, &mut execution_state, &mut program) {
+            if let Quit = handle_tick(&mut ide_state, &mut execution_state, &program) {
                 return Ok(());
             }
             last_tick = Instant::now();
@@ -198,7 +198,7 @@ fn handle_key(
 fn handle_tick(
     ide_state: &mut IDEState,
     execution_state: &mut ExecutionState<&[u8], Vec<u8>>,
-    program: &mut Program,
+    program: &Program,
 ) -> HandleKeyResult {
     if !ide_state.paused {
         let result = execution_state.step();

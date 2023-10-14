@@ -28,7 +28,7 @@ fn main() {
 
 type GenericResult = Result<(), Box<dyn std::error::Error>>;
 
-fn command() -> Command<'static> {
+fn command() -> Command {
     Command::new("fungoid")
         .version("0.2.1")
         .author("Josh Karpel <josh.karpel@gmail.com>")

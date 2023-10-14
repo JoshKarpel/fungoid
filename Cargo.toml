@@ -11,7 +11,7 @@ homepage = "https://github.com/JoshKarpel/fungoid"
 repository = "https://github.com/JoshKarpel/fungoid"
 
 [dependencies]
-clap = "3"
+clap = "4"
 crossterm = "0"
 humantime = "2"
 rand = "0"

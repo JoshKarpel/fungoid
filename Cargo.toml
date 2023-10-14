@@ -1,7 +1,7 @@
 [package]
 name = "fungoid"
 version = "0.3.0"
-description = "A Befunge interpreter and TUI IDE written in Rust"
+description = "A Befunge interpreter and text-UI IDE written in Rust"
 authors = ["Josh Karpel <josh.karpel@gmail.com>"]
 edition = '2018'
 readme = "README.md"

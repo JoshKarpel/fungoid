@@ -25,7 +25,7 @@ use crate::{
     program::{Position, Program},
 };
 
-pub fn ide(program: Program) -> crossterm::Result<()> {
+pub fn ide(program: Program) -> io::Result<()> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();

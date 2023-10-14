@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io, io::Read, str::FromStr};
+use std::{collections::HashMap, ffi::OsString, fs::File, io, io::Read, str::FromStr};
 
 use itertools::{Itertools, MinMaxResult};
 
@@ -33,7 +33,7 @@ impl Program {
         self.0.insert(*pos, c);
     }
 
-    pub fn from_file(path: &str) -> Result<Self, io::Error> {
+    pub fn from_file(path: &OsString) -> Result<Self, io::Error> {
         let mut f = File::open(path)?;
         let mut contents = String::new();
         f.read_to_string(&mut contents)?;

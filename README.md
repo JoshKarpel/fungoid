@@ -1,8 +1,6 @@
 # fungoid
 
-![Tests](https://github.com/JoshKarpel/fungoid/workflows/tests/badge.svg)
-
-A Befunge interpreter written in Rust.
+A Befunge interpreter and text-UI IDE written in Rust.
 
 ## Installation
 

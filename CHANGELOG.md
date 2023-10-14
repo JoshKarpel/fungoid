@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+### Changed
+
+- Reworked the CLI commands, especially for interacting with the bundled examples programs.
+
 ## 0.2.2
 
 ### Changed

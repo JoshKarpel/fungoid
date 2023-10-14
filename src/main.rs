@@ -1,19 +1,8 @@
 use std::{
-    error::Error,
-    fmt,
-    fmt::Display,
-    io,
-    io::{Read, Write},
-    str::FromStr,
-    string::String,
-    time::Instant,
+    error::Error, ffi::OsString, fmt, fmt::Display, io, str::FromStr, string::String, time::Instant,
 };
 
-use clap::{
-    Arg,
-    ArgAction::{Set, SetTrue},
-    ArgMatches, Command,
-};
+use clap::{Args, Parser, Subcommand};
 use fungoid::{examples::EXAMPLES, execution::ExecutionState, program::Program};
 use humantime::format_duration;
 use itertools::Itertools;
@@ -26,60 +15,122 @@ fn main() {
     }
 }
 
-type GenericResult = Result<(), Box<dyn std::error::Error>>;
+type GenericResult<T> = Result<T, Box<dyn Error>>;
 
-fn command() -> Command {
-    Command::new("fungoid")
-        .version("0.2.1")
-        .author("Josh Karpel <josh.karpel@gmail.com>")
-        .about("A Befunge interpreter written in Rust")
-        .subcommand(
-            Command::new("run")
-                .about("Execute a program")
-                .arg(
-                    Arg::new("profile")
-                        .long("profile")
-                        .action(SetTrue)
-                        .help("Enable profiling"),
-                )
-                .arg(
-                    Arg::new("trace")
-                        .long("trace")
-                        .action(SetTrue)
-                        .help("Trace program execution"),
-                )
-                .arg(
-                    Arg::new("FILE")
-                        .action(Set)
-                        .required(true)
-                        .help("The file to read the program from"),
-                ),
-        )
-        .subcommand(
-            Command::new("ide").about("Start a TUI IDE").arg(
-                Arg::new("FILE")
-                    .action(Set)
-                    .required(true)
-                    .help("The file to read the program from"),
-            ),
-        )
-        .subcommand(
-            Command::new("examples").about("Print the names of the bundled example programs."),
-        )
-        .arg_required_else_help(true)
+#[derive(Debug, Parser)]
+#[command(name = "fungoid", author, version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
 }
-fn cli() -> GenericResult {
-    let matches = command().get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("ide") {
-        ide(matches)?;
-    } else if let Some(matches) = matches.subcommand_matches("run") {
-        run_program(matches)?;
-    } else if matches.subcommand_matches("examples").is_some() {
-        println!("{}", EXAMPLES.keys().sorted().join("\n"))
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Run a program
+    #[command(arg_required_else_help = true)]
+    Run {
+        /// The path to the file to read the program from
+        file: OsString,
+        /// Enable execution tracing
+        #[arg(long)]
+        trace: bool,
+        /// Enable profiling
+        #[arg(long)]
+        profile: bool,
+    },
+    /// Start the TUI IDE
+    #[command(arg_required_else_help = true)]
+    Ide {
+        /// The path to the file to open
+        file: OsString,
+    },
+    /// Interact with the bundled example programs.
+    #[command(arg_required_else_help = true)]
+    Examples(ExamplesArgs),
+}
+
+#[derive(Debug, Args)]
+struct ExamplesArgs {
+    #[command(subcommand)]
+    command: ExamplesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum ExamplesCommands {
+    /// Print the available bundled example programs
+    #[command(arg_required_else_help = true)]
+    List,
+    /// Print one of the example programs to stdout
+    #[command(arg_required_else_help = true)]
+    Print { example: String },
+    /// Run one of the example programs
+    #[command(arg_required_else_help = true)]
+    Run {
+        /// The name of the example to run
+        example: String,
+        /// Enable execution tracing
+        #[arg(long)]
+        trace: bool,
+        /// Enable profiling
+        #[arg(long)]
+        profile: bool,
+    },
+}
+
+fn cli() -> GenericResult<()> {
+    match Cli::parse().command {
+        Commands::Run {
+            file,
+            trace,
+            profile,
+        } => {
+            let program = Program::from_file(&file)?;
+
+            run_program(program, trace, profile)?;
+
+            Ok(())
+        }
+
+        Commands::Ide { file } => {
+            let program = Program::from_file(&file)?;
+
+            fungoid::ide::ide(program)?;
+
+            Ok(())
+        }
+
+        Commands::Examples(ExamplesArgs {
+            command: ExamplesCommands::List,
+        }) => {
+            println!("{}", EXAMPLES.keys().sorted().join("\n"));
+
+            Ok(())
+        }
+
+        Commands::Examples(ExamplesArgs {
+            command: ExamplesCommands::Print { example },
+        }) => {
+            let program = get_example(example.as_str())?;
+            println!("{}", program);
+
+            Ok(())
+        }
+
+        Commands::Examples(ExamplesArgs {
+            command:
+                ExamplesCommands::Run {
+                    example,
+                    trace,
+                    profile,
+                },
+        }) => {
+            let program = Program::from_str(get_example(example.as_str())?).unwrap();
+
+            run_program(program, trace, profile)?;
+
+            Ok(())
+        }
     }
-
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -105,61 +156,34 @@ impl Error for NoExampleFound {
     }
 }
 
-fn load_program(matches: &ArgMatches) -> Result<Program, Box<dyn Error>> {
-    let file = matches.get_one::<String>("FILE").unwrap();
-    if file.starts_with("example:") || file.starts_with("examples:") {
-        let (_, e) = file.split_once(':').unwrap();
-        if let Some(p) = EXAMPLES.get(e) {
-            Ok(Program::from_str(p)?)
-        } else {
-            Err(Box::new(NoExampleFound::new(format!(
-                "No example named '{}'.\nExamples: {:?}",
-                e,
-                EXAMPLES.keys()
-            ))))
-        }
+fn get_example(example: &str) -> GenericResult<&str> {
+    if let Some(program) = EXAMPLES.get(example) {
+        Ok(program)
     } else {
-        Ok(Program::from_file(file)?)
+        Err(Box::new(NoExampleFound::new(format!(
+            "No example named '{}'.\nExamples:\n{}",
+            example,
+            EXAMPLES.keys().sorted().join("\n")
+        ))))
     }
 }
 
-fn ide(matches: &ArgMatches) -> GenericResult {
-    let program = load_program(matches)?;
-
-    fungoid::ide::ide(program)?;
-
-    Ok(())
-}
-
-fn run_program(matches: &ArgMatches) -> GenericResult {
-    let program = load_program(matches)?;
-
+fn run_program(program: Program, trace: bool, profile: bool) -> GenericResult<()> {
     let input = &mut io::stdin();
     let output = &mut io::stdout();
-    let program_state =
-        fungoid::execution::ExecutionState::new(program, matches.get_flag("trace"), input, output);
+    let mut program_state = ExecutionState::new(program, trace, input, output);
 
-    run(program_state, matches.get_flag("profile"))?;
-
-    Ok(())
-}
-
-pub fn run<R: Read, O: Write>(
-    mut program_state: ExecutionState<R, O>,
-    profile: bool,
-) -> GenericResult {
     let start = Instant::now();
     program_state.run()?;
     let duration = start.elapsed();
-
-    let num_seconds = 1.0e-9 * (duration.as_nanos() as f64);
 
     if profile {
         eprintln!(
             "Executed {} instructions in {} ({} instructions/second)",
             program_state.instruction_count,
             format_duration(duration),
-            ((program_state.instruction_count as f64 / num_seconds) as u64).separated_string()
+            ((program_state.instruction_count as f64 / duration.as_secs_f64()) as u64)
+                .separated_string()
         );
     }
 
@@ -168,10 +192,12 @@ pub fn run<R: Read, O: Write>(
 
 #[cfg(test)]
 mod tests {
-    use crate::command;
+    use clap::CommandFactory;
+
+    use crate::Cli;
 
     #[test]
     fn verify_command() {
-        command().debug_assert();
+        Cli::command().debug_assert()
     }
 }

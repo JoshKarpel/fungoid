@@ -5,6 +5,7 @@ description = "A Befunge interpreter and text-UI IDE written in Rust"
 authors = ["Josh Karpel <josh.karpel@gmail.com>"]
 edition = '2018'
 readme = "README.md"
+license = "MIT"
 license-file = "LICENSE"
 documentation = "https://github.com/JoshKarpel/fungoid"
 homepage = "https://github.com/JoshKarpel/fungoid"

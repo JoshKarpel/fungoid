@@ -1,6 +1,4 @@
-use std::{
-    error::Error, ffi::OsString, fmt, fmt::Display, io, str::FromStr, string::String, time::Instant,
-};
+use std::{error::Error, ffi::OsString, fmt, fmt::Display, io, str::FromStr, time::Instant};
 
 use clap::{Args, Parser, Subcommand};
 use fungoid::{examples::EXAMPLES, execution::ExecutionState, program::Program};

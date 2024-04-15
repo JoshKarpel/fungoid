@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Changed
+
+- Tweaked package metadata.
+
 ## 0.3.0
 
 ### Changed
